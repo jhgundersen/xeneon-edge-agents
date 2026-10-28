@@ -51,11 +51,23 @@ Item {
             : sampledPositionMs
     readonly property real progress: lengthMs > 0 ? positionMs / lengthMs : 0
 
+    // Every daemon snapshot (health refreshes once a second) delivers a new
+    // spotify object; only a different sample may re-anchor the bar, or it
+    // would snap back to the last sampled position each time.
+    property string sampleKey: ""
+
     onSpotifyChanged: {
         // Read the new value directly: `available` may not have re-evaluated
         // yet when this handler runs.
         var live = spotify !== null && spotify !== undefined
             && spotify.available === true
+        var key = live
+            ? [spotify.status, spotify.title, spotify.artist,
+               spotify.position_ms, spotify.length_ms].join("\u0000")
+            : ""
+        if (key === sampleKey)
+            return
+        sampleKey = key
         sampledPositionMs = live ? Number(spotify.position_ms) : 0
         sampledAtMs = Date.now()
         nowMs = sampledAtMs

@@ -315,6 +315,30 @@ TestCase {
         verify(!findChild(portal, "spotifyTitle").parent.visible)
     }
 
+    function test_spotifyProgressKeepsRunningAcrossUnrelatedSnapshots() {
+        mockStore.dashboards = ["agents", "spotify"]
+        mockPreferences.dashboard = "spotify"
+        var playing = {
+            "available": true, "status": "playing", "title": "Track",
+            "artist": "Artist", "album": "", "art_url": "",
+            "length_ms": 200000, "position_ms": 10000,
+            "can_control": true, "can_go_next": true, "can_go_previous": true
+        }
+        mockStore.spotify = Object.assign({}, playing)
+        var view = findChild(portal, "spotifyDashboard")
+        wait(0)
+        // Pretend the last sample was taken 30 s ago.
+        view.sampledAtMs = view.sampledAtMs - 30000
+        // A health refresh republishes identical Spotify values.
+        mockStore.spotify = Object.assign({}, playing)
+        wait(0)
+        verify(view.positionMs >= 40000)
+        // A seek reported by the daemon does re-anchor.
+        mockStore.spotify = Object.assign({}, playing, {"position_ms": 5000})
+        wait(0)
+        verify(view.positionMs < 6000)
+    }
+
     function test_priorityOrderKeepsTheFlatGrid() {
         mockStore.agents = workspaceAgents([2, 1, 3])
         mockStore.agentOrder = {"available": true, "mode": "priority"}
