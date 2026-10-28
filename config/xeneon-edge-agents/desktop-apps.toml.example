@@ -1,10 +1,12 @@
-# Header app shortcuts for the XENEON EDGE command center on this machine.
+# Desktop apps the XENEON EDGE command center may focus or launch on this
+# machine. The Spotify dashboard launches the app with id "spotify" when
+# Spotify is not running.
 # Copy to ~/.config/xeneon-edge-agents/desktop-apps.toml and restart the
 # daemon (systemctl --user restart xeneon-agentd). The installer never writes
 # this file, so it survives reinstalls.
 #
-# 0-4 entries, shown left to right. Delete every [[apps]] entry and write
-# `apps = []` for no shortcuts; remove the file to get Spotify and Discord.
+# 0-4 entries. Delete every [[apps]] entry and write
+# `apps = []` for none; remove the file to get Spotify and Discord.
 # The portal can only send back an id from this list; launching and focusing
 # are resolved by the daemon.
 #

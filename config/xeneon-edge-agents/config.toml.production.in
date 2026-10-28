@@ -26,6 +26,6 @@ refresh_ms = 1000
 edge_output = "@OUTPUT_CONNECTOR@"
 herdr_class = "herdr"
 
-# Header app shortcuts (0-4) are configured per machine in desktop-apps.toml
+# Launchable desktop apps (0-4) are configured per machine in desktop-apps.toml
 # beside this file, which the installer never writes. Without it the built-in
 # Spotify and Discord pair is used. See desktop-apps.toml.example.

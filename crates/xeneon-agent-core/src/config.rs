@@ -65,7 +65,7 @@ pub struct ScreenConfig {
 pub struct DesktopConfig {
     pub edge_output: Option<String>,
     pub herdr_class: String,
-    /// Header shortcuts, in display order. The portal can only name one of
+    /// Desktop apps the daemon may focus or launch. The portal can only name one of
     /// these by `id`; the daemon resolves everything else from this list.
     pub apps: Vec<DesktopAppConfig>,
 }

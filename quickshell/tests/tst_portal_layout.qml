@@ -264,23 +264,29 @@ TestCase {
         compare(glider.x, (track.width - glider.width) / 2)
     }
 
-    function test_viewToggleCyclesEnabledDashboardsAndHidesAgentControls() {
-        var toggle = findChild(portal, "dashboardToggle")
+    function test_dashboardTabsSelectDashboardsAndHideAgentControls() {
         var title = findChild(portal, "dashboardTitle")
-        verify(!toggle.visible)
+        compare(findChild(portal, "dashboardTab_agents"), null)
         verify(portal.agentsDashboard)
 
         mockStore.dashboards = ["agents", "spotify"]
+        mockStore.spotify = {"available": true, "status": "paused"}
         wait(0)
-        verify(toggle.activate())
+        var agentsTab = findChild(portal, "dashboardTab_agents")
+        var spotifyTab = findChild(portal, "dashboardTab_spotify")
+        verify(agentsTab.selected && !spotifyTab.selected)
+        compare(spotifyTab.label, "SPOTIFY")
+        compare(spotifyTab.detail, "PAUSED")
+
+        verify(spotifyTab.activate())
         compare(portal.currentDashboard, "spotify")
         compare(mockPreferences.dashboard, "spotify")
-        compare(findChild(portal, "dashboardLabel").text, "VIEW // SPOTIFY")
+        verify(spotifyTab.selected && !agentsTab.selected)
         verify(title.text.indexOf("// NOW PLAYING") > 0)
         verify(!mockActivity.ambientAllowed)
         verify(!findChild(portal, "agentOrderToggle").visible)
 
-        verify(toggle.activate())
+        verify(agentsTab.activate())
         compare(portal.currentDashboard, "agents")
         verify(mockActivity.ambientAllowed)
 
@@ -289,6 +295,48 @@ TestCase {
         mockStore.dashboards = ["agents"]
         wait(0)
         compare(portal.currentDashboard, "agents")
+    }
+
+    function test_openingSpotifyDashboardStartsSpotifyOnlyWhenOffline() {
+        mockStore.dashboards = ["agents", "spotify"]
+        wait(0)
+        var spotifyTab = findChild(portal, "dashboardTab_spotify")
+        compare(spotifyTab.detail, "OFFLINE")
+        verify(spotifyTab.activate())
+        compare(mockBridge.appRequests.spotify, 1)
+
+        verify(findChild(portal, "dashboardTab_agents").activate())
+        mockStore.spotify = {"available": true, "status": "playing"}
+        mockStore.actionResultReceived({
+            "request_id": "spotify-1", "action": "desktop_app", "ok": true,
+            "code": "desktop_app_launched", "message": "desktop_app_launched"
+        })
+        verify(spotifyTab.activate())
+        compare(mockBridge.appRequests.spotify, 1)
+
+        // Without a configured spotify app nothing is launched.
+        verify(findChild(portal, "dashboardTab_agents").activate())
+        mockStore.spotify = {"available": false}
+        mockStore.desktopApps = []
+        verify(spotifyTab.activate())
+        compare(mockBridge.appRequests.spotify, 1)
+    }
+
+    function test_dashboardTabsOrderAndPageDotsFitBesideTheStatusRow() {
+        var actions = findChild(portal, "headerActions")
+        var order = findChild(portal, "agentOrderToggle")
+        var dots = findChild(portal, "pageDots")
+        var status = findChild(portal, "headerStatus")
+        mockStore.dashboards = ["agents", "basecamp", "spotify"]
+        mockStore.agents = agents(20)
+        mockStore.agentOrder = {"available": true, "mode": "priority"}
+        tryCompare(portal, "pageCount", 2)
+        var tab = findChild(portal, "dashboardTab_spotify")
+        // Headless windows report the portal invisible, so the Row may not
+        // lay out items that appear later; add up the slots instead.
+        var tabs = portal.dashboards.length * (tab.width + actions.spacing)
+        var headerEnd = actions.x + tabs + order.width
+        verify(headerEnd + 24 + dots.width < status.x)
     }
 
     function test_spotifyDashboardShowsTrackAndSendsTypedControls() {
@@ -487,99 +535,6 @@ TestCase {
         verify(toggle.activate())
         compare(mockBridge.orderRequests, 2)
         compare(mockBridge.lastOrder, "grouped")
-    }
-
-    function test_desktopLaunchersSitImmediatelyAfterOrderWithoutOverlap() {
-        var actions = findChild(portal, "headerActions")
-        var order = findChild(portal, "agentOrderToggle")
-        var spotify = findChild(portal, "desktopAppButton_spotify")
-        var discord = findChild(portal, "desktopAppButton_discord")
-        var dots = findChild(portal, "pageDots")
-        verify(actions !== null)
-        verify(order !== null)
-        verify(spotify !== null)
-        verify(discord !== null)
-        verify(dots !== null)
-
-        compare(spotify.x, order.x + order.width + actions.spacing)
-        compare(discord.x, spotify.x + spotify.width + actions.spacing)
-        verify(actions.x + actions.width < dots.x)
-        compare(spotify.Accessible.name, "SPOTIFY")
-        compare(discord.Accessible.name, "DISCORD")
-        verify(spotify.enabled)
-        verify(discord.enabled)
-
-        verify(spotify.activate())
-        compare(mockBridge.appRequests.spotify, 1)
-        compare(mockBridge.appRequests.discord, undefined)
-        verify(spotify.pending)
-        verify(!discord.pending)
-        verify(!spotify.activate())
-        compare(mockBridge.appRequests.spotify, 1)
-        mockStore.actionResultReceived({
-            "request_id": "spotify-1",
-            "action": "desktop_app",
-            "ok": true,
-            "code": "desktop_ready",
-            "message": "desktop_ready"
-        })
-        verify(!spotify.pending)
-
-        verify(discord.activate())
-        compare(mockBridge.appRequests.spotify, 1)
-        compare(mockBridge.appRequests.discord, 1)
-        verify(discord.pending)
-        mockStore.actionResultReceived({
-            "request_id": "discord-1",
-            "action": "desktop_app",
-            "ok": false,
-            "code": "desktop_launch_failed",
-            "message": "desktop_launch_failed"
-        })
-        verify(!discord.pending)
-    }
-
-    function test_desktopShortcutsFollowConfigurationFromZeroToFour() {
-        var actions = findChild(portal, "headerActions")
-        var order = findChild(portal, "agentOrderToggle")
-        var dots = findChild(portal, "pageDots")
-
-        mockStore.desktopApps = []
-        wait(0)
-        compare(findChild(portal, "desktopAppButton_spotify"), null)
-        tryCompare(actions, "width", order.x + order.width)
-
-        mockStore.desktopApps = [
-            {"id": "slack", "label": "Slack", "accent": "magenta"},
-            {"id": "teams", "label": "Teams", "accent": "blue"},
-            {"id": "mail", "label": "Mail", "accent": "accent"},
-            {"id": "notes", "label": "Notes", "accent": "yellow"}
-        ]
-        wait(0)
-        var last = findChild(portal, "desktopAppButton_notes")
-        verify(last !== null)
-        compare(last.Accessible.name, "NOTES")
-        tryVerify(function() {
-            return actions.width === last.x + last.width
-        })
-        verify(actions.x + actions.width < dots.x)
-        // Two pages of dots still clear the voice/micro status row.
-        mockStore.agents = agents(20)
-        mockStore.agentOrder = {"available": true, "mode": "priority"}
-        tryCompare(portal, "pageCount", 2)
-        var status = findChild(portal, "headerStatus")
-        tryVerify(function() { return dots.x + dots.width < status.x })
-        // The dashboard toggle takes one more slot and must still fit.
-        mockStore.dashboards = ["agents", "spotify"]
-        var toggle = findChild(portal, "dashboardToggle")
-        wait(0)
-        // Headless windows report the portal invisible, so the Row may not
-        // lay out the newly shown toggle; count its slot either way.
-        var toggleSpace = order.x > 0 ? 0 : toggle.width + actions.spacing
-        verify(actions.x + actions.width + toggleSpace + 24 + dots.width
-            < status.x)
-        verify(last.activate())
-        compare(mockBridge.appRequests.notes, 1)
     }
 
     function test_lowerCountsAndShrinkClampSafely() {

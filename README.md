@@ -122,15 +122,17 @@ windows, resets, plan/freshness state, and bounded today/hour token activity
 when available.
 More than one dashboard can be enabled per machine in
 `~/.config/xeneon-edge-agents/dashboards.toml` (see
-`config/xeneon-edge-agents/dashboards.toml.example`); the header's VIEW toggle
-cycles through them. Besides the agent command center there is a Spotify
-now-playing dashboard with play/pause, next, and previous, and a Basecamp
-dashboard that shows configured card tables as lanes next to the Hey! inbox,
-read through the signed-in Basecamp CLI; tapping a card or item opens it in
-the browser.
-Header controls focus or launch 0-4 desktop apps configured per machine in
+`config/xeneon-edge-agents/dashboards.toml.example`); the header shows one tab
+per enabled dashboard with a short live status. Besides the agent command
+center there is a Spotify now-playing dashboard with play/pause, next, and
+previous, and a Basecamp dashboard that shows configured card tables as lanes
+next to the Hey! inbox, read through the signed-in Basecamp CLI; tapping a
+card or item opens it in the browser.
+The desktop apps the daemon may focus or launch are configured per machine in
 `~/.config/xeneon-edge-agents/desktop-apps.toml` (Spotify and Discord when the
-file is absent); see `config/xeneon-edge-agents/desktop-apps.toml.example`.
+file is absent; see `config/xeneon-edge-agents/desktop-apps.toml.example`).
+Opening the Spotify dashboard launches the `spotify` app when Spotify is not
+running.
 In Grouped order the cards are drawn as one lane per Herdr workspace, with the
 workspace name above each lane; Priority order keeps the flat attention grid. The Micro control opens a read-only virtual
 projection of the connected device and current agent slots.

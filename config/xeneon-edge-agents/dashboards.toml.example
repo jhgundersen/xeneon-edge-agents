@@ -1,5 +1,5 @@
-# Dashboards shown on the XENEON EDGE on this machine, in the order the
-# header's VIEW toggle cycles through them. Copy to
+# Dashboards shown on the XENEON EDGE on this machine, as header tabs in this
+# order. Copy to
 # ~/.config/xeneon-edge-agents/dashboards.toml and restart the daemon
 # (systemctl --user restart xeneon-agentd). The installer never writes this
 # file. Without it only the agent command center is shown.

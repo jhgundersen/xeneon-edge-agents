@@ -196,17 +196,49 @@ Item {
         return "AGENT COMMAND"
     }
 
-    function selectNextDashboard() {
-        if (dashboards.length < 2)
+    function selectDashboard(dashboard) {
+        if (dashboards.indexOf(dashboard) === -1)
             return false
-        var next = dashboards[
-            (dashboards.indexOf(currentDashboard) + 1) % dashboards.length
-        ]
-        preferences.dashboard = next
+        preferences.dashboard = dashboard
         if (typeof preferences.sync === "function")
             preferences.sync()
         notePassiveInteraction()
+        // Opening the Spotify dashboard starts Spotify when it is not running.
+        if (dashboard === "spotify" && store.spotify.available !== true
+                && desktopAppConfigured("spotify"))
+            requestDesktop("spotify")
         return true
+    }
+
+    function dashboardDetail(dashboard) {
+        if (dashboard === "spotify") {
+            if (store.spotify.available !== true)
+                return "OFFLINE"
+            return String(store.spotify.status || "stopped").toUpperCase()
+        }
+        if (dashboard === "basecamp") {
+            if (store.basecamp.available !== true)
+                return "OFFLINE"
+            return store.basecamp.unread_count
+                + (store.basecamp.unreads_capped ? "+" : "") + " UNREAD"
+        }
+        var working = 0
+        var waiting = 0
+        for (var index = 0; index < store.agents.length; index += 1) {
+            if (store.agents[index].status === "working")
+                working += 1
+            else if (store.agents[index].status === "blocked")
+                waiting += 1
+        }
+        return waiting > 0 ? waiting + " WAITING" : working + " WORKING"
+    }
+
+    function dashboardAccent(dashboard) {
+        if (dashboard === "spotify")
+            return theme.green
+        if (dashboard === "basecamp")
+            return theme.yellow
+        return theme.accent
     }
 
     function desktopAppConfigured(appId) {
@@ -500,51 +532,23 @@ Item {
             }
             spacing: 12
 
-            Rectangle {
-                id: dashboardToggle
-                objectName: "dashboardToggle"
+            // One tab per enabled dashboard, in configured order.
+            Repeater {
+                model: root.dashboards.length > 1 ? root.dashboards : []
 
-                width: 160
-                height: 48
-                radius: 12
-                visible: root.dashboards.length > 1
-                color: dashboardTap.pressed
-                    ? root.theme.surfacePressed
-                    : root.theme.surfaceRaised
-                border.width: 1
-                border.color: root.theme.accent
-                enabled: root.controlCenterInteractive
+                DashboardTab {
+                    required property var modelData
 
-                function activate() {
-                    if (!enabled)
-                        return false
-                    return root.selectNextDashboard()
-                }
-
-                Accessible.role: Accessible.Button
-                Accessible.ignored: !visible
-                Accessible.name: "Dashboard " + root.currentDashboard
-                Accessible.description: "Switch to the next dashboard"
-                Accessible.onPressAction: activate()
-
-                Text {
-                    objectName: "dashboardLabel"
-                    anchors.centerIn: parent
-                    text: "VIEW // " + root.currentDashboard.toUpperCase()
-                    textFormat: Text.PlainText
-                    color: root.theme.textPrimary
-                    font {
-                        family: "monospace"
-                        pixelSize: 11
-                        weight: Font.DemiBold
-                        letterSpacing: 0.5
-                    }
-                }
-
-                TapHandler {
-                    id: dashboardTap
-                    gesturePolicy: TapHandler.ReleaseWithinBounds
-                    onTapped: dashboardToggle.activate()
+                    objectName: "dashboardTab_" + modelData
+                    width: root.dashboards.length > 4 ? 120 : 140
+                    height: 48
+                    label: String(modelData).toUpperCase()
+                    detail: root.dashboardDetail(modelData)
+                    selected: root.currentDashboard === modelData
+                    accent: root.dashboardAccent(modelData)
+                    theme: root.theme
+                    enabled: root.controlCenterInteractive
+                    onTriggered: root.selectDashboard(modelData)
                 }
             }
 
@@ -626,27 +630,6 @@ Item {
                 }
             }
 
-            // One button per daemon-configured shortcut (desktop.apps, 0-4).
-            Repeater {
-                model: root.store.desktopApps
-
-                DesktopAppButton {
-                    required property var modelData
-
-                    objectName: "desktopAppButton_" + modelData.id
-                    // Four shortcuts must still clear the page dots.
-                    width: root.store.desktopApps.length > 2 ? 104 : 132
-                    height: 48
-                    label: String(modelData.label).toUpperCase()
-                    accent: root.theme[modelData.accent] || root.theme.accent
-                    theme: root.theme
-                    pending: root.desktopActionPending(modelData.id)
-                    enabled: root.controlCenterInteractive
-                        && !root.store.freshSnapshotRequired
-                    onInteracted: root.activity.noteUserActivity()
-                    onTriggered: root.requestDesktop(modelData.id)
-                }
-            }
         }
 
         Row {
