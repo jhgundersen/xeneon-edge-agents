@@ -581,7 +581,7 @@ Item {
                     required property var modelData
 
                     objectName: "dashboardTab_" + modelData
-                    width: root.dashboards.length > 4 ? 120 : 140
+                    width: root.dashboards.length > 5 ? 120 : 140
                     height: 48
                     label: String(modelData).toUpperCase()
                     detail: root.dashboardDetail(modelData)
@@ -608,7 +608,9 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 12
 
+            // Paging still works by swipe when the header has no room left.
             visible: root.agentsDashboard && root.pageCount > 1
+                && x + width + 16 <= headerStatus.x
 
             Repeater {
                 model: root.pageCount
@@ -659,6 +661,7 @@ Item {
         }
 
         Row {
+            id: headerStatus
             objectName: "headerStatus"
             anchors {
                 right: parent.right

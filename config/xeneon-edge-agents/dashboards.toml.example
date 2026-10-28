@@ -41,3 +41,5 @@ card_table = 9711341101
 # [github]
 # organization = "acme"
 # user = "my-work-login"
+# bin = "/usr/bin/gh"   # if `gh` on PATH is a wrapper (e.g. mise) that
+#                       # cannot run in the daemon's read-only sandbox
