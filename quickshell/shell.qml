@@ -13,9 +13,6 @@ ShellRoot {
         String(Quickshell.env("XENEON_EDGE_PREVIEW") || "") === "1"
     readonly property bool livePreviewMode:
         String(Quickshell.env("XENEON_EDGE_LIVE_PREVIEW") || "") === "1"
-    readonly property bool previewMicroOpen:
-        root.previewMode
-        && String(Quickshell.env("XENEON_EDGE_PREVIEW_MICRO_OPEN") || "") === "1"
     readonly property bool previewWindowMode:
         previewMode || livePreviewMode
     readonly property bool reducedMotion:
@@ -246,8 +243,6 @@ ShellRoot {
             sourceTheme: portalTheme
             reducedMotion: root.reducedMotion
             previewMode: root.previewMode
-            restoreVoiceFocus: root.livePreviewMode
-            previewMicroOpen: root.previewMicroOpen
             hostName: root.hostName
             slackImageDirectory: root.slackImageDirectory
         }

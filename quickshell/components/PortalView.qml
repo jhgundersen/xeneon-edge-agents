@@ -12,8 +12,6 @@ Item {
     property var sourceTheme: theme
     property bool reducedMotion: false
     property bool previewMode: false
-    property bool restoreVoiceFocus: false
-    property bool previewMicroOpen: false
     property string hostName: "LOCAL"
     property string slackImageDirectory: ""
 
@@ -40,15 +38,6 @@ Item {
         ? Math.max(1, lanePages.length)
         : Math.max(1, Math.ceil(store.agents.length / pageSize))
     readonly property string surfaceState: store.surfaceState()
-    readonly property color microStatusColor: store.micro.connected
-        ? theme.success
-        : theme.error
-    readonly property color readableMicroStatusColor:
-        ThemePalette.ensureContrast(
-            String(microStatusColor),
-            String(theme.surfaceRaised),
-            4.5
-        )
     readonly property color degradedColor: theme.needsHelp
     readonly property color readableDegradedColor:
         ThemePalette.ensureContrast(
@@ -86,10 +75,8 @@ Item {
     property string toastDetail: ""
     property bool toastSuccess: true
     property bool toastVisible: false
-    property var pendingVoiceFocus: ({})
     property var pendingDesktopActions: ({})
     property string pendingAgentOrderRequest: ""
-    property bool microDrawerOpen: false
     property bool paletteSettingsOpen: false
     readonly property bool agentOrderAvailable:
         store.agentOrder !== undefined
@@ -109,11 +96,6 @@ Item {
     readonly property string managerLabel: managerName.toUpperCase()
 
     clip: true
-
-    Component.onCompleted: {
-        if (previewMode && previewMicroOpen)
-            microDrawerOpen = true
-    }
 
     function agentAt(pageIndex, slotIndex) {
         var agentIndex = pageIndex * pageSize + slotIndex
@@ -319,16 +301,6 @@ Item {
         toastTimer.restart()
     }
 
-    function requestVoiceAfterFocus(action) {
-        var requestId = root.bridge.restoreFocus()
-        if (requestId === "")
-            return false
-        var pending = Object.assign({}, pendingVoiceFocus)
-        pending[requestId] = action
-        pendingVoiceFocus = pending
-        return true
-    }
-
     function desktopActionPending(appId) {
         var requestIds = Object.keys(pendingDesktopActions)
         for (var index = 0; index < requestIds.length; index += 1) {
@@ -360,15 +332,6 @@ Item {
         return true
     }
 
-    function toggleMotionReduction() {
-        if (reducedMotion)
-            return false
-        preferences.reduceMotion = !userMotionReduced
-        if (typeof preferences.sync === "function")
-            preferences.sync()
-        return true
-    }
-
     function toggleDisplayDim() {
         preferences.dimmed = !displayDimmed
         if (typeof preferences.sync === "function")
@@ -379,19 +342,12 @@ Item {
     function togglePaletteSettings() {
         activity.noteUserActivity()
         paletteSettingsOpen = !paletteSettingsOpen
-        if (paletteSettingsOpen)
-            microDrawerOpen = false
         return true
     }
 
     onPageCountChanged: {
         currentPage = Math.min(currentPage, pageCount - 1)
         pages.positionViewAtIndex(currentPage, ListView.SnapPosition)
-    }
-
-    onControlCenterInteractiveChanged: {
-        if (!controlCenterInteractive)
-            microDrawerOpen = false
     }
 
     Connections {
@@ -457,15 +413,12 @@ Item {
             rightMargin: 24
             topMargin: 20
         }
-        motionReduced: root.effectiveReducedMotion
-        motionForced: root.reducedMotion
         dimmed: root.displayDimmed
         paletteOpen: root.paletteSettingsOpen
         paletteCustom: paletteSettings.customized
         theme: root.theme
         opacity: root.displayDimmed ? 0.58 : 1
         z: 80
-        onMotionToggleRequested: root.toggleMotionReduction()
         onDimToggleRequested: root.toggleDisplayDim()
         onPaletteToggleRequested: root.togglePaletteSettings()
 
@@ -676,114 +629,13 @@ Item {
             }
             spacing: 12
 
-            VoiceControl {
-                width: 320
+            ClockCard {
+                objectName: "headerClock"
+                width: 340
                 height: 58
                 anchors.verticalCenter: parent.verticalCenter
-                voice: root.store.voice
                 theme: root.theme
                 reducedMotion: root.effectiveReducedMotion
-                enabled: root.controlCenterInteractive
-                actionsEnabled: root.controlCenterInteractive
-                    && !root.store.freshSnapshotRequired
-                onInteracted: root.activity.noteUserActivity()
-                onStartRequested: {
-                    if (root.restoreVoiceFocus)
-                        root.requestVoiceAfterFocus("start")
-                    else
-                        root.bridge.startVoice()
-                }
-                onStopRequested: {
-                    if (root.restoreVoiceFocus)
-                        root.requestVoiceAfterFocus("stop")
-                    else
-                        root.bridge.stopVoice()
-                }
-                onCancelRequested: root.bridge.cancelVoice()
-            }
-
-            Rectangle {
-                id: microButton
-
-                width: 218
-                height: 58
-                radius: 14
-                anchors.verticalCenter: parent.verticalCenter
-                color: microTap.pressed
-                    ? root.theme.surfacePressed
-                    : root.theme.surfaceRaised
-                border.width: 1
-                border.color: root.microStatusColor
-                enabled: root.controlCenterInteractive
-
-                function activate() {
-                    if (!enabled)
-                        return false
-                    root.activity.noteUserActivity()
-                    root.microDrawerOpen = !root.microDrawerOpen
-                    return true
-                }
-
-                Accessible.role: Accessible.Button
-                Accessible.ignored: !enabled
-                Accessible.name: "Codex Micro virtual projection"
-                Accessible.description: root.store.micro.connected
-                    ? "Connected"
-                    : "Unavailable"
-                Accessible.onPressAction: activate()
-
-                Row {
-                    anchors.centerIn: parent
-                    spacing: 11
-
-                    Rectangle {
-                        width: 28
-                        height: 28
-                        radius: 14
-                        color: "transparent"
-                        border.width: 4
-                        border.color: root.microStatusColor
-                    }
-
-                    Column {
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 1
-
-                        Text {
-                            text: "MICRO"
-                            textFormat: Text.PlainText
-                            color: root.theme.textPrimary
-                            font {
-                                family: "monospace"
-                                pixelSize: 15
-                                weight: Font.Bold
-                                letterSpacing: 0.7
-                            }
-                        }
-
-                        Text {
-                            text: root.store.micro.connected
-                                ? Number(root.store.micro.battery) >= 0
-                                    ? root.store.micro.battery + "% · CONNECTED"
-                                    : "CONNECTED"
-                                : "OFFLINE"
-                            textFormat: Text.PlainText
-                            color: root.readableMicroStatusColor
-                            font {
-                                family: "monospace"
-                                pixelSize: 9
-                                weight: Font.DemiBold
-                            }
-                        }
-                    }
-                }
-
-                TapHandler {
-                    id: microTap
-                    enabled: microButton.enabled
-                    gesturePolicy: TapHandler.ReleaseWithinBounds
-                    onTapped: microButton.activate()
-                }
             }
 
         }
@@ -1133,21 +985,6 @@ Item {
         }
     }
 
-    MicroDrawer {
-        anchors.fill: parent
-        opened: root.microDrawerOpen
-        interactive: root.controlCenterInteractive
-        reducedMotion: root.effectiveReducedMotion
-        micro: root.store.micro
-        agents: root.store.agents
-        voice: root.store.voice
-        theme: root.theme
-        z: 35
-        opacity: ambientView.controlCenterProgress
-        onInteracted: root.activity.noteUserActivity()
-        onCloseRequested: root.microDrawerOpen = false
-    }
-
     Rectangle {
         id: toast
 
@@ -1246,30 +1083,8 @@ Item {
                 )
                 return
             }
-            if (result.action === "restore_focus") {
-                var intent = root.pendingVoiceFocus[result.request_id]
-                if (intent !== undefined) {
-                    var pending = Object.assign(
-                        {},
-                        root.pendingVoiceFocus
-                    )
-                    delete pending[result.request_id]
-                    root.pendingVoiceFocus = pending
-                    if (result.ok) {
-                        if (intent === "start")
-                            root.bridge.startVoice()
-                        else if (intent === "stop")
-                            root.bridge.stopVoice()
-                    } else {
-                        root.showToast(
-                            "VOICE // FOCUS REQUIRED",
-                            "Choose a laptop typing target and try again",
-                            false
-                        )
-                    }
-                }
+            if (result.action === "restore_focus")
                 return
-            }
             if (String(result.action).indexOf("spotify_") === 0) {
                 if (!result.ok)
                     root.showToast(
@@ -1318,7 +1133,6 @@ Item {
 
         function onFreshSnapshotRequiredChanged() {
             if (root.store.freshSnapshotRequired) {
-                root.pendingVoiceFocus = {}
                 root.pendingDesktopActions = {}
                 root.pendingAgentOrderRequest = ""
             }

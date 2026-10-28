@@ -4,40 +4,20 @@ import "../state/ThemePalette.js" as ThemePalette
 Item {
     id: root
 
-    property bool motionReduced: false
     property bool dimmed: false
-    property bool motionForced: false
     property bool paletteOpen: false
     property bool paletteCustom: false
     property var theme: ThemePalette.fallback
 
-    signal motionToggleRequested()
     signal dimToggleRequested()
     signal paletteToggleRequested()
 
-    width: 304
+    width: 200
     height: 52
 
     Row {
         anchors.fill: parent
         spacing: 8
-
-        DisplaySettingButton {
-            objectName: "motionSettingButton"
-            width: 96
-            height: parent.height
-            label: "MOTION"
-            stateLabel: root.motionForced
-                ? "SYSTEM"
-                : root.motionReduced
-                    ? "REDUCED"
-                    : "FULL"
-            accent: root.theme.accent
-            theme: root.theme
-            checked: root.motionReduced
-            enabled: !root.motionForced
-            onToggled: root.motionToggleRequested()
-        }
 
         DisplaySettingButton {
             objectName: "dimSettingButton"

@@ -11,8 +11,6 @@ Item {
     property var sourceTheme: theme
     property bool reducedMotion: false
     property bool previewMode: false
-    property bool restoreVoiceFocus: false
-    property bool previewMicroOpen: false
     property string hostName: "LOCAL"
     property string slackImageDirectory: ""
 
@@ -50,8 +48,6 @@ Item {
             sourceTheme: root.sourceTheme
             reducedMotion: root.reducedMotion
             previewMode: root.previewMode
-            restoreVoiceFocus: root.restoreVoiceFocus
-            previewMicroOpen: root.previewMicroOpen
             hostName: root.hostName
             slackImageDirectory: root.slackImageDirectory
         }

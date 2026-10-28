@@ -140,15 +140,17 @@ file is absent; see `config/xeneon-edge-agents/desktop-apps.toml.example`).
 Opening the Spotify dashboard launches the `spotify` app when Spotify is not
 running.
 In Grouped order the cards are drawn as one lane per Herdr workspace, with the
-workspace name above each lane; Priority order keeps the flat attention grid. The Micro control opens a read-only virtual
-projection of the connected device and current agent slots.
+workspace name above each lane; Priority order keeps the flat attention grid.
+The header's right side holds a clock whose digits roll into place and whose
+hairline sweeps smoothly across each minute; the voice and Micro controls are
+not shown in this fork.
 Tapping the AGENTS tab switches ordering: arriving shows Priority, and each
 further tap flips between Grouped and Priority. With Herdr's fork the value is
 Herdr's own setting; with stock Herdr the daemon keeps it.
-The upper-right Motion and Screen controls are shared by the command-center
-and Ambient views. Motion snaps the ambient constellation to fixed positions
-and removes trail animation; Screen applies a reversible near-black
-portal veil. These presentation settings persist across portal restarts.
+The upper-right Screen and Palette controls are shared by the command-center
+and Ambient views. Screen applies a reversible near-black portal veil. The
+saved reduce-motion preference (or the system setting) still snaps the
+ambient constellation to fixed positions and removes trail animation. These presentation settings persist across portal restarts.
 
 Portal chrome follows Omarchy's active runtime theme. The named Quickshell
 configuration reads the allowlisted colors in

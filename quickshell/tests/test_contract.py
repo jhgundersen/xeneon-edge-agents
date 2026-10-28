@@ -342,8 +342,7 @@ class QmlSafetyContractTests(unittest.TestCase):
             "AgentCard.qml",
             "DesktopAppButton.qml",
             "HoldControl.qml",
-            "MicroDrawer.qml",
-            "VoiceControl.qml",
+            "DashboardTab.qml",
         ):
             self.assertIn(
                 "Accessible.ignored:",
@@ -376,7 +375,6 @@ class QmlSafetyContractTests(unittest.TestCase):
             re.DOTALL,
         )
         self.assertIsNotNone(reconnect)
-        self.assertIn("root.pendingVoiceFocus = {}", reconnect.group("body"))
         self.assertIn("root.pendingDesktopActions = {}", reconnect.group("body"))
 
     def test_home_telemetry_and_app_controls_remain_presentation_only(self):
@@ -384,7 +382,6 @@ class QmlSafetyContractTests(unittest.TestCase):
         store = source("state/PortalStore.qml")
         bridge = source("state/PortalBridge.qml")
         usage = source("components/AiUsageDock.qml")
-        micro = source("components/MicroDrawer.qml")
         shell = source("shell.qml")
         panel = source("PortalPanel.qml")
 
@@ -403,9 +400,8 @@ class QmlSafetyContractTests(unittest.TestCase):
         self.assertEqual(shell.count("hostName: root.hostName"), 2)
         self.assertIn("property string hostName:", panel)
         self.assertIn("hostName: root.hostName", panel)
-        self.assertIn("MicroDrawer", portal)
+        self.assertNotIn("MicroDrawer", portal)
         self.assertNotIn("Process {", usage)
-        self.assertNotIn("Process {", micro)
         self.assertNotIn("terminal_text", portal)
         self.assertNotIn("prompt_text", portal)
 
@@ -447,26 +443,18 @@ class QmlSafetyContractTests(unittest.TestCase):
         self.assertNotIn("HERDR DISCONNECTED", portal)
         self.assertNotIn('"Synchronizing agent ordering with Herdr"', portal)
 
-    def test_voice_and_ring_stay_presentation_only_and_reduce_motion(self):
-        voice = source("components/VoiceControl.qml")
-        bridge = source("state/PortalBridge.qml")
+    def test_header_has_a_clock_and_no_voice_or_micro_controls(self):
         portal = source("components/PortalView.qml")
+        clock = source("components/ClockCard.qml")
         shell = source("shell.qml")
 
-        self.assertIn("function beginPress()", voice)
-        self.assertIn("function finishPress()", voice)
-        self.assertIn("startRequested()", voice)
-        self.assertIn("stopRequested()", voice)
-        self.assertIn("cancelRequested()", voice)
-        self.assertIn('sendBuilt("voice_start"', bridge)
-        self.assertIn('sendBuilt("voice_stop"', bridge)
-        self.assertIn('sendBuilt("voice_cancel"', bridge)
-        self.assertEqual(portal.count("if (root.restoreVoiceFocus)"), 2)
-        self.assertIn("pendingVoiceFocus", portal)
-        self.assertIn("if (result.ok)", portal)
-        self.assertIn("VOICE // FOCUS REQUIRED", portal)
-        self.assertIn("restoreVoiceFocus: root.livePreviewMode", shell)
-        self.assertNotIn("Process {", voice)
+        self.assertIn("ClockCard {", portal)
+        self.assertNotIn("VoiceControl", portal)
+        self.assertNotIn("MicroDrawer", portal)
+        self.assertNotIn("restoreVoiceFocus", shell)
+        self.assertIn("component RollingDigit", clock)
+        self.assertIn("easing.type: Easing.Linear", clock)
+        self.assertNotIn("Process {", clock)
 
     def test_display_settings_are_shared_persistent_and_presentation_only(self):
         shell = source("shell.qml")
@@ -518,7 +506,7 @@ class QmlSafetyContractTests(unittest.TestCase):
         self.assertIn("z: 70", portal)
         self.assertIn("z: 80", portal)
 
-        self.assertIn('label: "MOTION"', controls)
+        self.assertNotIn('label: "MOTION"', controls)
         self.assertIn('label: "SCREEN"', controls)
         self.assertIn('label: "PALETTE"', controls)
         self.assertIn('stateLabel: root.dimmed ? "MINIMUM" : "NORMAL"', controls)
@@ -549,9 +537,7 @@ class QmlSafetyContractTests(unittest.TestCase):
         ai_usage = source("components/AiUsageDock.qml")
         ambient = source("components/AmbientView.qml")
         display_setting = source("components/DisplaySettingButton.qml")
-        micro_drawer = source("components/MicroDrawer.qml")
         portal = source("components/PortalView.qml")
-        voice = source("components/VoiceControl.qml")
         qml_sources = "\n".join(
             path.read_text(encoding="utf-8")
             for path in ROOT.rglob("*.qml")
@@ -620,17 +606,11 @@ class QmlSafetyContractTests(unittest.TestCase):
         self.assertIn("color: root.readableMuted", agent_card)
         self.assertIn("String(statePillBackground)", agent_card)
         self.assertIn("color: root.readablePillAccent", agent_card)
-        self.assertIn("microStatusColor: store.micro.connected", portal)
-        self.assertIn("? theme.success\n        : theme.error", portal)
         self.assertIn("degradedColor: theme.needsHelp", portal)
         self.assertIn("toastColor: toastSuccess", portal)
-        self.assertIn("border.color: root.theme.error", voice)
-        self.assertIn("String(controlBackground)", voice)
-        self.assertIn("color: root.readableSecondary", voice)
         self.assertIn("root.readableColor(accent)", ai_usage)
         self.assertIn("root.readableColor(\n                            root.statusColor", ai_usage)
         self.assertIn("ThemePalette.ensureContrast(", display_setting)
-        self.assertIn("color: root.readableConnectionColor", micro_drawer)
         self.assertIn("color: root.readableSurfaceMessageColor", portal)
 
         self.assertNotIn(
@@ -641,10 +621,6 @@ class QmlSafetyContractTests(unittest.TestCase):
             "                font {",
             display_setting,
         )
-        self.assertNotIn("? root.theme.green", micro_drawer)
-        self.assertNotIn("? root.theme.red", micro_drawer)
-        self.assertIn("? theme.success\n        : theme.error", micro_drawer)
-        self.assertIn("return root.theme.ready", micro_drawer)
         self.assertIn('? theme.ready\n        : Palette.ambientColor', ambient)
 
         # The only literal left in production QML is the intentional black

@@ -62,20 +62,6 @@ TestCase {
         })
     }
 
-    VoiceControl {
-        id: voice
-
-        x: 280
-        y: 305
-        width: 360
-        height: 52
-        voice: ({
-            "available": true,
-            "state": "idle",
-            "owned": false
-        })
-    }
-
     DesktopAppButton {
         id: spotifyButton
         x: 0
@@ -112,24 +98,6 @@ TestCase {
         signalName: "triggered"
     }
 
-    SignalSpy {
-        id: voiceStartSpy
-        target: voice
-        signalName: "startRequested"
-    }
-
-    SignalSpy {
-        id: voiceStopSpy
-        target: voice
-        signalName: "stopRequested"
-    }
-
-    SignalSpy {
-        id: voiceCancelSpy
-        target: voice
-        signalName: "cancelRequested"
-    }
-
     function init() {
         hold.finishHold()
         hold.targetAgentId = "agent-a"
@@ -138,16 +106,6 @@ TestCase {
         confirmedSpy.clear()
         cancelledSpy.clear()
         accessibleHoldSpy.clear()
-        voice.pressOwned = false
-        voice.voice = {
-            "available": true,
-            "state": "idle",
-            "owned": false
-        }
-        voice.actionsEnabled = true
-        voiceStartSpy.clear()
-        voiceStopSpy.clear()
-        voiceCancelSpy.clear()
         hostileCard.enabled = true
         agentFocusSpy.clear()
         spotifyButton.enabled = true
@@ -269,65 +227,6 @@ TestCase {
         hostileCard.enabled = false
         verify(!hostileCard.requestFocus())
         compare(agentFocusSpy.count, 0)
-
-        voice.actionsEnabled = false
-        verify(!voice.accessibleToggle())
-        compare(voiceStartSpy.count, 0)
-        compare(voiceStopSpy.count, 0)
-        compare(voiceCancelSpy.count, 0)
-
     }
 
-    function test_voicePressPairsExactlyOneStartAndStop() {
-        verify(voice.beginPress())
-        verify(!voice.beginPress())
-        compare(voiceStartSpy.count, 1)
-        verify(voice.finishPress())
-        verify(!voice.finishPress())
-        compare(voiceStopSpy.count, 1)
-    }
-
-    function test_voicePressRequiresIdleAvailableState() {
-        voice.voice = {
-            "available": false,
-            "state": "unavailable",
-            "owned": false
-        }
-        verify(!voice.beginPress())
-        compare(voiceStartSpy.count, 0)
-
-        voice.voice = {
-            "available": true,
-            "state": "processing",
-            "owned": true
-        }
-        verify(!voice.beginPress())
-        compare(voiceStartSpy.count, 0)
-    }
-
-    function test_voiceErrorCanBeRetriedExactlyOnce() {
-        voice.voice = {
-            "state": "error",
-            "available": true,
-            "owned": false
-        }
-        verify(voice.beginPress())
-        verify(!voice.beginPress())
-        compare(voiceStartSpy.count, 1)
-        verify(voice.finishPress())
-        compare(voiceStopSpy.count, 1)
-    }
-
-    function test_ownedVoiceErrorCanOnlyCancel() {
-        voice.voice = {
-            "state": "error",
-            "available": true,
-            "owned": true
-        }
-        verify(!voice.beginPress())
-        verify(voice.accessibleToggle())
-        compare(voiceStartSpy.count, 0)
-        compare(voiceStopSpy.count, 0)
-        compare(voiceCancelSpy.count, 1)
-    }
 }
