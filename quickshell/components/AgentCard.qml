@@ -27,6 +27,28 @@ Item {
     signal interacted()
 
     readonly property string agentState: Palette.effectiveAgentState(agent)
+    readonly property bool working: agent !== null && agentState === "working"
+    // Working cards breathe slowly instead of carrying a moving sweep:
+    // 0 at rest, 1 at the top of each breath. Reduced motion holds midway.
+    property real breath: 0.5
+
+    SequentialAnimation on breath {
+        loops: Animation.Infinite
+        running: root.working && !root.reducedMotion
+        NumberAnimation {
+            from: 0
+            to: 1
+            duration: 1400
+            easing.type: Easing.InOutSine
+        }
+        NumberAnimation {
+            from: 1
+            to: 0
+            duration: 1400
+            easing.type: Easing.InOutSine
+        }
+        onRunningChanged: if (!running) root.breath = 0.5
+    }
     readonly property color accent: Palette.agentColor(agent, theme)
     readonly property color cardBackground:
         focusHandler.pressed || guardedFocusHandler.pressed
@@ -185,8 +207,18 @@ Item {
         border.width: root.agent !== null && root.agent.focused ? 2 : 1
         border.color: Qt.alpha(
             root.accent,
-            root.agent !== null && root.agent.focused ? 0.95 : 0.58
+            root.agent !== null && root.agent.focused
+                ? 0.95
+                : root.working ? 0.4 + 0.5 * root.breath : 0.58
         )
+    }
+
+    Rectangle {
+        objectName: "cardWorkingBreath"
+        anchors.fill: parent
+        radius: 18
+        visible: root.working
+        color: Qt.alpha(root.accent, 0.025 + 0.06 * root.breath)
     }
 
     Rectangle {
@@ -213,19 +245,18 @@ Item {
 
         SequentialAnimation on opacity {
             loops: Animation.Infinite
-            running: !root.reducedMotion
-                && (root.agentState === "working"
-                    || root.agentState === "blocked")
+            // Only a blocked agent flashes; it is the one asking for you.
+            running: !root.reducedMotion && root.agentState === "blocked"
             NumberAnimation {
                 from: 0.42
                 to: 1
-                duration: root.agentState === "blocked" ? 520 : 900
+                duration: 520
                 easing.type: Easing.InOutSine
             }
             NumberAnimation {
                 from: 1
                 to: 0.42
-                duration: root.agentState === "blocked" ? 520 : 900
+                duration: 520
                 easing.type: Easing.InOutSine
             }
         }
@@ -258,58 +289,6 @@ Item {
             colorization: 0.86
             colorizationColor: root.accent
             opacity: 1
-        }
-    }
-
-    Item {
-        id: activitySweep
-
-        visible: !root.reducedMotion && root.agentState === "working"
-        width: Math.min(210, root.width * 0.3)
-        height: 18
-        y: -2
-
-        Rectangle {
-            id: activitySweepGlowSource
-
-            visible: false
-            anchors.centerIn: parent
-            width: parent.width
-            height: 6
-            radius: 3
-            color: root.accent
-        }
-
-        MultiEffect {
-            objectName: "cardActivityBloom"
-            anchors.fill: activitySweepGlowSource
-            source: activitySweepGlowSource
-            autoPaddingEnabled: true
-            blurEnabled: true
-            blur: 1
-            blurMax: 36
-            blurMultiplier: 1.1
-            brightness: 0.42
-            colorization: 0.8
-            colorizationColor: root.accent
-            opacity: 0.88
-        }
-
-        SequentialAnimation on x {
-            loops: Animation.Infinite
-            running: activitySweep.visible
-            NumberAnimation {
-                from: 14
-                to: Math.max(14, root.width - activitySweep.width - 14)
-                duration: 1450
-                easing.type: Easing.InOutSine
-            }
-            NumberAnimation {
-                from: Math.max(14, root.width - activitySweep.width - 14)
-                to: 14
-                duration: 1450
-                easing.type: Easing.InOutSine
-            }
         }
     }
 
