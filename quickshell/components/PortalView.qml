@@ -86,7 +86,6 @@ Item {
     property var pendingVoiceFocus: ({})
     property var pendingDesktopActions: ({})
     property string pendingAgentOrderRequest: ""
-    property string pendingAgentBackendRequest: ""
     property bool microDrawerOpen: false
     property bool paletteSettingsOpen: false
     readonly property bool agentOrderAvailable:
@@ -102,14 +101,9 @@ Item {
             && String(store.backend.mode) === "t3code"
             ? "t3code"
             : "herdr"
-    readonly property bool managerSwitchable:
-        store.backend !== undefined && store.backend !== null
-        && store.backend.switchable === true
     readonly property string managerName:
         managerMode === "t3code" ? "T3 Code" : "Herdr"
     readonly property string managerLabel: managerName.toUpperCase()
-    readonly property string alternateManagerName:
-        managerMode === "t3code" ? "Herdr" : "T3 Code"
 
     clip: true
 
@@ -291,16 +285,6 @@ Item {
         if (requestId === "")
             return false
         pendingAgentOrderRequest = requestId
-        return true
-    }
-
-    function requestAgentBackend(mode) {
-        if (!managerSwitchable || pendingAgentBackendRequest !== "")
-            return false
-        var requestId = bridge.setAgentBackend(mode)
-        if (requestId === "")
-            return false
-        pendingAgentBackendRequest = requestId
         return true
     }
 
@@ -557,76 +541,6 @@ Item {
                     id: dashboardTap
                     gesturePolicy: TapHandler.ReleaseWithinBounds
                     onTapped: dashboardToggle.activate()
-                }
-            }
-
-            Rectangle {
-                id: agentBackendToggle
-                objectName: "agentBackendToggle"
-
-                width: 184
-                height: 48
-                radius: 12
-                visible: root.agentsDashboard
-                color: backendTap.pressed
-                    ? root.theme.surfacePressed
-                    : root.theme.surfaceRaised
-                border.width: 1
-                border.color: root.managerSwitchable
-                    ? root.theme.accent
-                    : root.theme.border
-                enabled: root.controlCenterInteractive
-                    && root.managerSwitchable
-                    && root.pendingAgentBackendRequest === ""
-                    && !root.store.freshSnapshotRequired
-
-                function activate() {
-                    if (!enabled)
-                        return false
-                    root.activity.noteUserActivity()
-                    return root.requestAgentBackend(
-                        root.managerMode === "herdr" ? "t3code" : "herdr"
-                    )
-                }
-
-                Accessible.role: Accessible.Button
-                Accessible.ignored: false
-                Accessible.name: root.pendingAgentBackendRequest !== ""
-                    ? "Agent manager switching"
-                    : root.managerSwitchable
-                        ? "Agent manager " + root.managerName
-                        : "Agent manager fixed"
-                Accessible.description: root.pendingAgentBackendRequest !== ""
-                    ? "Switching the command center to "
-                        + root.alternateManagerName
-                    : root.managerSwitchable
-                        ? "Switch the command center from " + root.managerName
-                            + " to " + root.alternateManagerName
-                        : "This daemon cannot switch agent managers"
-                Accessible.onPressAction: activate()
-
-                Text {
-                    objectName: "agentBackendLabel"
-                    anchors.centerIn: parent
-                    text: root.pendingAgentBackendRequest !== ""
-                        ? "MANAGER // SWITCHING"
-                        : "MANAGER // " + root.managerLabel
-                    textFormat: Text.PlainText
-                    color: root.managerSwitchable
-                        ? root.theme.textPrimary
-                        : root.theme.textMuted
-                    font {
-                        family: "monospace"
-                        pixelSize: 11
-                        weight: Font.DemiBold
-                        letterSpacing: 0.5
-                    }
-                }
-
-                TapHandler {
-                    id: backendTap
-                    gesturePolicy: TapHandler.ReleaseWithinBounds
-                    onTapped: agentBackendToggle.activate()
                 }
             }
 
@@ -1360,18 +1274,6 @@ Item {
         target: root.store
 
         function onActionResultReceived(result) {
-            if (result.action === "backend_herdr"
-                    || result.action === "backend_t3code") {
-                root.pendingAgentBackendRequest = ""
-                root.showToast(
-                    result.ok
-                        ? "MANAGER // SWITCHED"
-                        : "MANAGER // " + String(result.code).toUpperCase(),
-                    result.message || result.request_id,
-                    result.ok
-                )
-                return
-            }
             if (result.action === "order_grouped"
                     || result.action === "order_priority") {
                 root.pendingAgentOrderRequest = ""
@@ -1459,7 +1361,6 @@ Item {
                 root.pendingVoiceFocus = {}
                 root.pendingDesktopActions = {}
                 root.pendingAgentOrderRequest = ""
-                root.pendingAgentBackendRequest = ""
             }
         }
     }

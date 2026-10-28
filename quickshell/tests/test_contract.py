@@ -422,16 +422,11 @@ class QmlSafetyContractTests(unittest.TestCase):
             if "tests" not in path.parts
         )
 
-        # The manager is daemon state: QML renders its wire value and sends
-        # exactly one of two typed switches. No backend-specific transport,
-        # path, socket, or binary can be chosen from QML.
-        self.assertIn('objectName: "agentBackendToggle"', portal)
-        self.assertIn('objectName: "agentBackendLabel"', portal)
-        self.assertIn("function requestAgentBackend(mode)", portal)
-        self.assertIn("pendingAgentBackendRequest", portal)
-        self.assertIn('result.action === "backend_herdr"', portal)
-        self.assertIn('sendBuilt("backend_" + mode', bridge)
-        self.assertIn('if (mode !== "herdr" && mode !== "t3code")', bridge)
+        # The manager is daemon state. This fork runs Herdr only, so the
+        # portal offers no switch; no backend-specific transport, path,
+        # socket, or binary can be chosen from QML either.
+        self.assertNotIn("agentBackendToggle", portal)
+        self.assertNotIn('sendBuilt("backend_"', bridge)
         self.assertIn('readonly property var allowedBackends: ["herdr", "t3code"]', store)
         self.assertIn("function normalizeBackend(value)", store)
         self.assertIn("backend = {\"mode\": \"herdr\", \"switchable\": false}", store)
