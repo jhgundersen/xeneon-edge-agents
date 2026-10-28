@@ -23,7 +23,20 @@ use crate::model::{
 };
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
-const SUPPORTED_HERDR_PROTOCOL: u32 = 20;
+// Protocol 20 is the Omarchy Herdr v0.8.0.r13 base; protocol 22 is stock
+// Herdr v0.9.1, which serves the same snapshot, subscription, focus, and zoom
+// shapes but none of the fork-only ordering or capability APIs. Protocol 21 is
+// deliberately absent: upstream and the XENEON fork both report it, so it does
+// not identify which API series the server carries.
+const SUPPORTED_HERDR_PROTOCOLS: [u32; 2] = [20, 22];
+
+fn supported_protocols_label() -> String {
+    SUPPORTED_HERDR_PROTOCOLS
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(" or ")
+}
 
 #[derive(Debug, Clone)]
 pub struct HerdrClient {
@@ -186,7 +199,7 @@ impl HerdrClient {
             json!({"id": request_id(), "method": "ping", "params": {}}),
         )
         .await?;
-        if ping.result.protocol != SUPPORTED_HERDR_PROTOCOL {
+        if !SUPPORTED_HERDR_PROTOCOLS.contains(&ping.result.protocol) {
             return Ok(SessionObservation {
                 session: SessionView {
                     name: descriptor.name.clone(),
@@ -196,7 +209,8 @@ impl HerdrClient {
                     last_sync_ms: Some(now_ms),
                     message: Some(format!(
                         "Herdr protocol {} is unsupported; expected {}",
-                        ping.result.protocol, SUPPORTED_HERDR_PROTOCOL
+                        ping.result.protocol,
+                        supported_protocols_label()
                     )),
                 },
                 agents: Vec::new(),
@@ -770,7 +784,7 @@ mod tests {
 
     #[tokio::test]
     async fn unsupported_protocols_never_request_or_surface_session_data() {
-        for protocol in [19, 999] {
+        for protocol in [19, 21, 23, 999] {
             let observation = observe_unsupported_protocol(protocol).await;
             assert_eq!(observation.session.state, SessionState::Incompatible);
             assert_eq!(observation.session.protocol, Some(protocol));
@@ -852,6 +866,73 @@ mod tests {
                 .map(|capability| capability.capability_id.as_str()),
             Some("interrupt-1")
         );
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn stock_herdr_v0_9_protocol_22_connects_without_fork_apis() {
+        let temp = tempdir().unwrap();
+        let socket = temp.path().join("herdr.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let (read, mut write) = stream.into_split();
+            let mut lines = BufReader::new(read).lines();
+            let request: Value =
+                serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+            assert_eq!(request["method"], "ping");
+            write
+                .write_all(
+                    b"{\"id\":\"ping\",\"result\":{\"type\":\"pong\",\"version\":\"0.9.1\",\"protocol\":22,\"capabilities\":{\"live_handoff\":true,\"health_check\":true}}}\n",
+                )
+                .await
+                .unwrap();
+
+            let (stream, _) = listener.accept().await.unwrap();
+            let (read, mut write) = stream.into_split();
+            let mut lines = BufReader::new(read).lines();
+            let request: Value =
+                serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+            assert_eq!(request["method"], "session.snapshot");
+            write
+                .write_all(
+                    b"{\"id\":\"snapshot\",\"result\":{\"type\":\"session_snapshot\",\"snapshot\":{\"version\":\"0.9.1\",\"protocol\":22,\"focused_workspace_id\":\"w1\",\"workspaces\":[{\"workspace_id\":\"w1\",\"number\":1,\"label\":\"xeneon\",\"focused\":true,\"agent_status\":\"working\",\"pane_count\":1,\"tab_count\":1,\"active_tab_id\":\"w1:t1\"}],\"tabs\":[{\"tab_id\":\"w1:t1\",\"workspace_id\":\"w1\",\"number\":1,\"label\":\"review\",\"focused\":true,\"agent_status\":\"working\",\"pane_count\":1}],\"panes\":[],\"layouts\":[],\"agents\":[{\"terminal_id\":\"term-1\",\"agent\":\"claude\",\"name\":\"claude\",\"agent_status\":\"working\",\"workspace_id\":\"w1\",\"tab_id\":\"w1:t1\",\"pane_id\":\"w1:p1\",\"focused\":true,\"interactive_ready\":true,\"revision\":3,\"state_change_seq\":7,\"terminal_title\":\"t\",\"terminal_title_stripped\":\"t\"}]}}}\n",
+                )
+                .await
+                .unwrap();
+
+            let (stream, _) = listener.accept().await.unwrap();
+            let (read, mut write) = stream.into_split();
+            let mut lines = BufReader::new(read).lines();
+            let request: Value =
+                serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+            assert_eq!(request["method"], "agent.order.get");
+            write
+                .write_all(
+                    b"{\"id\":\"\",\"error\":{\"code\":\"invalid_request\",\"message\":\"invalid request: unknown variant `agent.order.get`\"}}\n",
+                )
+                .await
+                .unwrap();
+        });
+        let descriptor = SessionDescriptor {
+            name: "default".into(),
+            running: true,
+            socket_path: socket,
+        };
+
+        let observation = HerdrClient::new("herdr")
+            .observe_session(&descriptor, "epoch", 0, 1234)
+            .await
+            .unwrap();
+
+        assert_eq!(observation.session.state, SessionState::Connected);
+        assert_eq!(observation.session.version.as_deref(), Some("0.9.1"));
+        assert_eq!(observation.session.protocol, Some(22));
+        assert_eq!(observation.agent_order, None);
+        assert_eq!(observation.agents.len(), 1);
+        assert_eq!(observation.agents[0].display_name, "review");
+        assert_eq!(observation.agents[0].status, AgentStatus::Working);
+        assert!(observation.agents[0].actions.interrupt.is_none());
         server.await.unwrap();
     }
 
