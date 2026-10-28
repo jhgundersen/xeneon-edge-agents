@@ -110,6 +110,11 @@ TestCase {
                 "messages": [{
                     "id": "CDEV-1700000200.000300", "author": "Kari", "text": "look",
                     "at": 1700000200, "replies": 0, "unread": false,
+                    "reactions": [
+                        {"emoji": "👍", "count": 3},
+                        {"emoji": "", "count": 2},
+                        {"emoji": ":partyparrot:", "count": 0}
+                    ],
                     "images": [
                         {"file": "FIMG1.png", "width": 480, "height": 135},
                         {"file": "../../etc/passwd", "width": 1, "height": 1},
@@ -123,6 +128,10 @@ TestCase {
         var images = normalized.channels[0].messages[0].images
         compare(images.length, 1)
         compare(images[0].file, "FIMG1.png")
+        var reactions = normalized.channels[0].messages[0].reactions
+        compare(reactions.length, 1)
+        compare(reactions[0].emoji, "👍")
+        compare(reactions[0].count, 3)
     }
 
     function test_acceptsFullSnapshotAndSortsAttention() {

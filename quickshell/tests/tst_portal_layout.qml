@@ -468,9 +468,11 @@ TestCase {
                 {"name": "dev", "available": true, "unread": 1, "unread_capped": false,
                  "messages": [
                      {"id": "CDEV-1700000050.000100", "author": "Jon", "text": "older",
-                      "at": now - 600, "replies": 0, "unread": false},
+                      "at": now - 600, "replies": 0, "unread": false,
+                      "images": [], "reactions": []},
                      {"id": "CDEV-1700000200.000300", "author": "Kari",
-                      "text": "hi @Jon see docs", "at": now - 60, "replies": 3, "unread": true}
+                      "text": "hi @Jon see docs", "at": now - 60, "replies": 3, "unread": true,
+                      "images": [], "reactions": [{"emoji": "👍", "count": 3}]}
                  ]},
                 {"name": "support", "available": false, "unread": 0,
                  "unread_capped": false, "messages": []}
@@ -488,6 +490,9 @@ TestCase {
         compare(feed.count, 2)
         var newest = findChild(portal, "slackMessage_1")
         verify(newest !== null)
+        verify(findChild(newest, "slackReactions_1") !== null)
+        compare(newest.modelData.reactions[0].emoji, "👍")
+        compare(findChild(portal, "slackMessage_0").modelData.reactions.length, 0)
         verify(newest.activate())
         verify(findChild(portal, "slackNotification_0").activate())
         compare(mockBridge.slackOpens, ["CDEV-1700000200.000300", "D1-1700000300.000200"])

@@ -479,11 +479,23 @@ QtObject {
                             && width > 0 && height > 0)
                         images.push({"file": file, "width": width, "height": height})
                 }
+                var reactions = []
+                var sourceReactions = Array.isArray(message.reactions)
+                    ? message.reactions
+                    : []
+                for (var r = 0; r < sourceReactions.length && r < 8; r += 1) {
+                    var reaction = sourceReactions[r] || {}
+                    var emoji = safeString(reaction.emoji, "", 34).trim()
+                    var times = count(reaction.count)
+                    if (emoji !== "" && times > 0)
+                        reactions.push({"emoji": emoji, "count": times})
+                }
                 messages.push({
                     "id": id,
                     "author": safeString(message.author, "", 48),
                     "text": safeString(message.text, "", 500),
                     "images": images,
+                    "reactions": reactions,
                     "at": count(message.at),
                     "replies": count(message.replies),
                     "unread": message.unread === true

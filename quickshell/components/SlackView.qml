@@ -177,6 +177,7 @@ Item {
                 width: feed.width
                 height: body.implicitHeight + header.height + 22
                     + (thumbnails.visible ? thumbnails.height + 10 : 0)
+                    + (reactionRow.visible ? reactionRow.height + 8 : 0)
                 radius: 12
                 color: messageTap.pressed
                     ? root.theme.surfacePressed
@@ -309,6 +310,48 @@ Item {
                                 fillMode: Image.PreserveAspectCrop
                                 asynchronous: true
                                 cache: true
+                            }
+                        }
+                    }
+                }
+
+                Row {
+                    id: reactionRow
+
+                    objectName: "slackReactions_" + message.index
+                    anchors {
+                        left: body.left
+                        top: thumbnails.visible ? thumbnails.bottom : body.bottom
+                        topMargin: 8
+                    }
+                    height: 26
+                    spacing: 6
+                    visible: message.modelData.reactions.length > 0
+
+                    Repeater {
+                        model: message.modelData.reactions
+
+                        Rectangle {
+                            required property var modelData
+
+                            width: reactionText.implicitWidth + 18
+                            height: reactionRow.height
+                            radius: 13
+                            color: root.theme.surfaceRaised
+                            border.width: 1
+                            border.color: Qt.alpha(root.accent, 0.3)
+
+                            Text {
+                                id: reactionText
+                                anchors.centerIn: parent
+                                text: String(parent.modelData.emoji) + " " + parent.modelData.count
+                                textFormat: Text.PlainText
+                                color: root.readablePrimary
+                                font {
+                                    family: "monospace"
+                                    pixelSize: 12
+                                    weight: Font.DemiBold
+                                }
                             }
                         }
                     }

@@ -15,7 +15,9 @@ use tokio::{io::AsyncWriteExt, process::Command, sync::Mutex, time::timeout};
 
 use crate::{
     config::SlackConfig,
-    model::{SlackChannel, SlackImage, SlackMessage, SlackNotification, SlackSnapshot},
+    model::{
+        SlackChannel, SlackImage, SlackMessage, SlackNotification, SlackReaction, SlackSnapshot,
+    },
 };
 
 const API_BASE: &str = "https://slack.com/api/";
@@ -31,6 +33,9 @@ const MAX_NAME_CHARS: usize = 48;
 // Message subtypes that are conversation, not channel housekeeping.
 const SHOWN_SUBTYPES: [&str; 4] = ["", "bot_message", "thread_broadcast", "file_share"];
 const MAX_IMAGES_PER_MESSAGE: usize = 2;
+const MAX_REACTIONS_PER_MESSAGE: usize = 8;
+// Older mentions have nothing left to say on a glanceable strip.
+const MENTION_MAX_AGE_SECONDS: u64 = 3 * 24 * 60 * 60;
 const MAX_IMAGE_BYTES: &str = "4000000";
 // Thumbnails come only from Slack's own file host.
 const IMAGE_URL_PREFIX: &str = "https://files.slack.com/";
@@ -276,6 +281,7 @@ impl SlackClient {
                 .render(api, cache, message["text"].as_str().unwrap_or(""))
                 .await;
             let images = self.images(api, cache, message).await;
+            let reactions = reactions(message);
             let item_id = format!("{id}-{ts}");
             urls.insert(item_id.clone(), deep_link(identity, id, ts));
             messages.push(SlackMessage {
@@ -283,6 +289,7 @@ impl SlackClient {
                 author,
                 text,
                 images,
+                reactions,
                 at: at as u64,
                 replies: message["reply_count"].as_u64().unwrap_or(0).min(9_999) as u32,
                 unread: is_unread,
@@ -381,6 +388,10 @@ impl SlackClient {
             )
             .await?;
         let mut mentions = Vec::new();
+        let oldest = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|now| now.as_secs().saturating_sub(MENTION_MAX_AGE_SECONDS))
+            .unwrap_or(0);
         for item in response["messages"]["matches"]
             .as_array()
             .into_iter()
@@ -411,6 +422,9 @@ impl SlackClient {
                 at: parse_ts(ts).unwrap_or_default() as u64,
                 unread: 0,
             });
+            if mentions.last().is_some_and(|mention| mention.at < oldest) {
+                mentions.pop();
+            }
         }
         Ok(mentions)
     }
@@ -579,7 +593,7 @@ impl SlackClient {
             .replace("&lt;", "<")
             .replace("&gt;", ">")
             .replace("&amp;", "&");
-        bounded(&decoded, MAX_TEXT_CHARS)
+        bounded(&emojify(&decoded), MAX_TEXT_CHARS)
     }
 }
 
@@ -683,6 +697,71 @@ impl Api<'_> {
         fs::rename(&partial, directory.join(name))?;
         Ok(())
     }
+}
+
+fn reactions(message: &Value) -> Vec<SlackReaction> {
+    message["reactions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|reaction| {
+            let name = reaction["name"].as_str()?;
+            let count = reaction["count"].as_u64().filter(|count| *count > 0)?;
+            Some(SlackReaction {
+                emoji: emoji_for(name)
+                    .map_or_else(|| bounded(&format!(":{name}:"), 34), str::to_owned),
+                count: count.min(9_999) as u32,
+            })
+        })
+        .take(MAX_REACTIONS_PER_MESSAGE)
+        .collect()
+}
+
+/// A Slack shortcode (`thumbsup`, `wave::skin-tone-3`) as its emoji; custom
+/// workspace emoji have none.
+fn emoji_for(name: &str) -> Option<&'static str> {
+    let base = name.split("::").next().unwrap_or(name);
+    emojis::get_by_shortcode(base).map(|emoji| emoji.as_str())
+}
+
+/// Replaces `:shortcode:` (and a trailing `:skin-tone-N:`) with emoji,
+/// leaving unknown codes, times like 12:30:45, and URLs untouched.
+fn emojify(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find(':') {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 1..];
+        let name_len = after
+            .find(|character: char| {
+                !(character.is_ascii_alphanumeric() || "_+-".contains(character))
+            })
+            .unwrap_or(after.len());
+        let name = &after[..name_len];
+        let closed = after[name_len..].starts_with(':');
+        match (closed && !name.is_empty())
+            .then(|| emoji_for(name))
+            .flatten()
+        {
+            Some(emoji) => {
+                out.push_str(emoji);
+                let mut tail = &after[name_len + 1..];
+                if let Some(skin) = tail.strip_prefix(":skin-tone-")
+                    && let Some(end) = skin.find(':')
+                    && skin[..end].bytes().all(|byte| byte.is_ascii_digit())
+                {
+                    tail = &skin[end + 1..];
+                }
+                rest = tail;
+            }
+            None => {
+                out.push(':');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 fn image_extension(url: &str) -> Option<&'static str> {
@@ -820,7 +899,7 @@ case "$url" in
   *conversations.history*) echo '{"ok":true,"messages":[{"ts":"1700000200.000300","user":"UKARI","text":"hi <@UME> see <https://x.dev|docs> &amp; <#CDEV|dev>","reply_count":3,"files":[{"id":"FIMG1","mimetype":"image/png","thumb_480":"https://files.slack.com/files-tmb/T-FIMG1-ok/x_480.png","thumb_480_w":480,"thumb_480_h":135},{"id":"FIMG2","mimetype":"image/png","thumb_480":"https://files.slack.com/files-tmb/T-FIMG2-denied/x_480.png","thumb_480_w":480,"thumb_480_h":200}]},{"ts":"1700000150.000100","subtype":"channel_join","user":"UOLA","text":"joined"},{"ts":"1700000050.000100","user":"UME","text":"older"}]}' ;;
   *users.info*user=UKARI*) echo '{"ok":true,"user":{"name":"kari","profile":{"display_name":"Kari","real_name":"Kari N"}}}' ;;
   *users.info*user=UME*) echo '{"ok":true,"user":{"name":"me","profile":{"display_name":"","real_name":"Jon"}}}' ;;
-  *search.messages*) echo '{"ok":true,"messages":{"matches":[{"channel":{"id":"CDEV","name":"dev"},"user":"UKARI","ts":"1700000200.000300","text":"hi <@UME>"}]}}' ;;
+  *search.messages*) echo '{"ok":true,"messages":{"matches":[{"channel":{"id":"CDEV","name":"dev"},"user":"UKARI","ts":"'"$(date +%s)"'.000300","text":"hi <@UME>"},{"channel":{"id":"CDEV","name":"dev"},"user":"UKARI","ts":"1700000200.000300","text":"old <@UME>"}]}}' ;;
   *) echo '{"ok":false,"error":"unknown_method"}' ;;
 esac
 "#,
@@ -909,6 +988,32 @@ esac
         let sample = client(temp.path(), 0o644).sample().await;
         assert!(!sample.snapshot.available);
         assert!(sample.urls.is_empty());
+    }
+
+    #[test]
+    fn shortcodes_become_emoji_and_everything_else_is_left_alone() {
+        assert_eq!(emojify("hei :wave: :+1::skin-tone-3: ok"), "hei 👋 👍 ok");
+        assert_eq!(emojify("at 12:30:45"), "at 12:30:45");
+        assert_eq!(emojify("see https://x.dev/a:b"), "see https://x.dev/a:b");
+        assert_eq!(emojify(":partyparrot: :"), ":partyparrot: :");
+        let message = serde_json::json!({"reactions": [
+            {"name": "thumbsup", "count": 3},
+            {"name": "partyparrot", "count": 1},
+            {"name": "wave::skin-tone-2", "count": 2},
+            {"name": "zero", "count": 0}
+        ]});
+        let rendered: Vec<_> = reactions(&message)
+            .into_iter()
+            .map(|reaction| (reaction.emoji, reaction.count))
+            .collect();
+        assert_eq!(
+            rendered,
+            [
+                ("👍".to_owned(), 3),
+                (":partyparrot:".to_owned(), 1),
+                ("👋".to_owned(), 2)
+            ]
+        );
     }
 
     #[test]

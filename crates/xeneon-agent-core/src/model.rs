@@ -196,11 +196,21 @@ pub struct SlackMessage {
     /// Thumbnails the daemon downloaded into its runtime image directory.
     #[serde(default)]
     pub images: Vec<SlackImage>,
+    #[serde(default)]
+    pub reactions: Vec<SlackReaction>,
     /// Unix seconds.
     pub at: u64,
     pub replies: u32,
     /// Posted after the user's last-read marker.
     pub unread: bool,
+}
+
+/// One reaction on a message: the emoji (or `:name:` for a custom one) and
+/// how many people used it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlackReaction {
+    pub emoji: String,
+    pub count: u32,
 }
 
 /// A Slack image thumbnail cached by the daemon. `file` is a bare file name
