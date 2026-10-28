@@ -467,10 +467,23 @@ QtObject {
                 var id = itemId(message.id)
                 if (id === "")
                     continue
+                var images = []
+                var sourceImages = Array.isArray(message.images) ? message.images : []
+                for (var i = 0; i < sourceImages.length && i < 2; i += 1) {
+                    var image = sourceImages[i] || {}
+                    var file = safeString(image.file, "", 40)
+                    var width = count(image.width)
+                    var height = count(image.height)
+                    // A bare cache file name only: no paths, no URLs.
+                    if (/^F[A-Z0-9]{1,23}\.(png|jpg|jpeg|gif|webp)$/.test(file)
+                            && width > 0 && height > 0)
+                        images.push({"file": file, "width": width, "height": height})
+                }
                 messages.push({
                     "id": id,
                     "author": safeString(message.author, "", 48),
                     "text": safeString(message.text, "", 500),
+                    "images": images,
                     "at": count(message.at),
                     "replies": count(message.replies),
                     "unread": message.unread === true

@@ -138,9 +138,9 @@ impl DesktopController {
         dispatch_focus(&self.hyprctl_bin, &address).await
     }
 
-    /// Opens a URL the daemon already validated in the default browser. It
-    /// runs as its own graphical service so the browser never inherits the
-    /// daemon's sandbox.
+    /// Opens a URL the daemon already validated with its registered handler
+    /// (the browser, or the Slack app for `slack://`). It runs as its own
+    /// graphical service so the handler never inherits the daemon's sandbox.
     pub async fn open_url(&self, url: &str) -> Result<()> {
         let status = Command::new(&self.uwsm_bin)
             .args(["app", "-t", "service", "--", "xdg-open", url])

@@ -9,6 +9,8 @@ Item {
 
     property var slack: ({"available": false})
     property var theme: ThemePalette.fallback
+    // Directory of thumbnails the daemon cached; empty hides images.
+    property string imageDirectory: ""
     property int channelIndex: 0
 
     signal openRequested(string itemId)
@@ -174,6 +176,7 @@ Item {
                 objectName: "slackMessage_" + index
                 width: feed.width
                 height: body.implicitHeight + header.height + 22
+                    + (thumbnails.visible ? thumbnails.height + 10 : 0)
                 radius: 12
                 color: messageTap.pressed
                     ? root.theme.surfacePressed
@@ -262,6 +265,52 @@ Item {
                     font {
                         family: "monospace"
                         pixelSize: 14
+                    }
+                }
+
+                Row {
+                    id: thumbnails
+
+                    objectName: "slackThumbnails_" + message.index
+                    anchors {
+                        left: body.left
+                        top: body.bottom
+                        topMargin: 10
+                    }
+                    height: 140
+                    spacing: 10
+                    visible: root.imageDirectory !== ""
+                        && message.modelData.images.length > 0
+
+                    Repeater {
+                        model: thumbnails.visible ? message.modelData.images : []
+
+                        Rectangle {
+                            required property var modelData
+
+                            width: Math.min(
+                                feed.width / 2 - 30,
+                                thumbnails.height * modelData.width / modelData.height
+                            )
+                            height: thumbnails.height
+                            radius: 10
+                            color: root.theme.surfaceRaised
+                            border.width: 1
+                            border.color: Qt.alpha(root.accent, 0.3)
+                            clip: true
+
+                            Image {
+                                anchors {
+                                    fill: parent
+                                    margins: 1
+                                }
+                                source: "file://" + root.imageDirectory + "/"
+                                    + parent.modelData.file
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                                cache: true
+                            }
+                        }
                     }
                 }
 

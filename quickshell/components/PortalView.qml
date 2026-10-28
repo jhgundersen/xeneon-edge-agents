@@ -15,6 +15,7 @@ Item {
     property bool restoreVoiceFocus: false
     property bool previewMicroOpen: false
     property string hostName: "LOCAL"
+    property string slackImageDirectory: ""
 
     readonly property int pageSize: 14
     // Dashboards the daemon enabled, in order. The selection is a display
@@ -1385,6 +1386,7 @@ Item {
         }
         visible: root.currentDashboard === "slack"
         slack: root.store.slack
+        imageDirectory: root.slackImageDirectory
         theme: root.theme
         enabled: root.controlCenterInteractive
         onInteracted: root.activity.noteUserActivity()

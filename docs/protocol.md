@@ -164,9 +164,12 @@ The only actions are:
   every other action.
 - `slack_open`: takes no agent, capability, or `app_id` and requires
   `item_id`, a `<conversation>-<ts>` id of a message or notification in the
-  current `slack` snapshot. Snapshots never carry permalinks or the token; the
-  daemon looks the id up in its own last Slack sample and opens only
-  permalinks into the signed-in `*.slack.com` workspace.
+  current `slack` snapshot. Snapshots never carry links or the token; the
+  daemon looks the id up in its own last Slack sample and opens only a
+  validated `slack://channel?team=…&id=…&message=…` deep link, so the item
+  opens in the Slack desktop app. Message images are thumbnails the daemon
+  downloads with the token into `$XDG_RUNTIME_DIR/xeneon-edge-agents/slack-images`
+  (needs the `files:read` scope); the snapshot names only the bare file.
 - `desktop_app`: takes no agent or capability and requires `app_id`, one of
   the ids in the snapshot's `desktop_apps` (0-4 entries from the daemon's
   `desktop-apps.toml` or `[[desktop.apps]]` configuration). The daemon focuses the single exact

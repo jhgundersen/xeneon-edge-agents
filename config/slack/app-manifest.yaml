@@ -5,8 +5,8 @@
 # as `token = "xoxp-..."` with mode 0600.
 #
 # Every scope is read-only. The dashboard reads the configured channels'
-# recent messages, your DMs' unread state, and your @-mentions; it never
-# posts, reacts, or marks anything as read.
+# recent messages and image thumbnails, your DMs' unread state, and your
+# @-mentions; it never posts, reacts, or marks anything as read.
 display_information:
   name: XENEON EDGE
   description: Read-only Slack dashboard for the XENEON EDGE command center.
@@ -23,6 +23,7 @@ oauth_config:
       - mpim:history
       - mpim:read
       - users:read
+      - files:read
       - search:read
       - team:read
 settings:

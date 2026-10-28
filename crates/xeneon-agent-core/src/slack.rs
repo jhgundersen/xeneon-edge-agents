@@ -15,7 +15,7 @@ use tokio::{io::AsyncWriteExt, process::Command, sync::Mutex, time::timeout};
 
 use crate::{
     config::SlackConfig,
-    model::{SlackChannel, SlackMessage, SlackNotification, SlackSnapshot},
+    model::{SlackChannel, SlackImage, SlackMessage, SlackNotification, SlackSnapshot},
 };
 
 const API_BASE: &str = "https://slack.com/api/";
@@ -30,6 +30,13 @@ const MAX_TEXT_CHARS: usize = 500;
 const MAX_NAME_CHARS: usize = 48;
 // Message subtypes that are conversation, not channel housekeeping.
 const SHOWN_SUBTYPES: [&str; 4] = ["", "bot_message", "thread_broadcast", "file_share"];
+const MAX_IMAGES_PER_MESSAGE: usize = 2;
+const MAX_IMAGE_BYTES: &str = "4000000";
+// Thumbnails come only from Slack's own file host.
+const IMAGE_URL_PREFIX: &str = "https://files.slack.com/";
+// A thumbnail that failed (e.g. files:read missing) is retried after this.
+const IMAGE_RETRY_AFTER: Duration = Duration::from_secs(600);
+pub const SLACK_IMAGE_DIR: &str = "xeneon-edge-agents/slack-images";
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -40,8 +47,8 @@ struct TokenFile {
 #[derive(Debug, Clone)]
 struct Identity {
     user_id: String,
-    /// Workspace URL from auth.test, e.g. `https://acme.slack.com/`.
-    team_url: String,
+    /// Workspace id from auth.test, used in `slack://` deep links.
+    team_id: String,
 }
 
 #[derive(Debug, Default)]
@@ -52,9 +59,10 @@ struct SlackCache {
     user_names: HashMap<String, String>,
     dm_cursor: usize,
     dm_unread: HashMap<String, SlackNotification>,
+    image_failures: HashMap<String, Instant>,
 }
 
-/// One Slack sample: the published snapshot plus the permalinks the daemon
+/// One Slack sample: the published snapshot plus the deep links the daemon
 /// keeps private and opens by id.
 #[derive(Debug, Default)]
 pub struct SlackSample {
@@ -69,6 +77,8 @@ pub struct SlackSample {
 pub struct SlackClient {
     config: SlackConfig,
     curl_bin: PathBuf,
+    /// Where thumbnails are cached; images are skipped when unset.
+    image_dir: Option<PathBuf>,
     cache: Arc<Mutex<SlackCache>>,
 }
 
@@ -81,8 +91,15 @@ impl SlackClient {
         Self {
             config,
             curl_bin: curl_bin.into(),
+            image_dir: std::env::var_os("XDG_RUNTIME_DIR")
+                .map(|runtime| PathBuf::from(runtime).join(SLACK_IMAGE_DIR)),
             cache: Arc::new(Mutex::new(SlackCache::default())),
         }
+    }
+
+    pub fn with_image_dir(mut self, image_dir: Option<PathBuf>) -> Self {
+        self.image_dir = image_dir;
+        self
     }
 
     /// A missing token or a failing API is an unavailable snapshot; one
@@ -138,11 +155,12 @@ impl SlackClient {
             Err(error) => tracing::debug!(%error, "Slack mention search failed"),
         }
         notifications.truncate(MAX_NOTIFICATIONS);
+        self.prune_images(&sample.snapshot.channels);
         for notification in &notifications {
             if let Some((channel, ts)) = notification.id.split_once('-') {
                 sample
                     .urls
-                    .insert(notification.id.clone(), permalink(&identity, channel, ts));
+                    .insert(notification.id.clone(), deep_link(&identity, channel, ts));
             }
         }
         sample.snapshot.notifications = notifications;
@@ -158,13 +176,13 @@ impl SlackClient {
             .as_str()
             .filter(|id| is_slack_id(id))
             .ok_or_else(|| anyhow!("auth.test returned no user"))?;
-        let team_url = response["url"]
+        let team_id = response["team_id"]
             .as_str()
-            .filter(|url| is_workspace_url(url))
-            .ok_or_else(|| anyhow!("auth.test returned no workspace URL"))?;
+            .filter(|id| is_slack_id(id))
+            .ok_or_else(|| anyhow!("auth.test returned no workspace"))?;
         let identity = Identity {
             user_id: user_id.to_owned(),
-            team_url: team_url.to_owned(),
+            team_id: team_id.to_owned(),
         };
         cache.identity = Some(identity.clone());
         Ok(identity)
@@ -257,12 +275,14 @@ impl SlackClient {
             let text = self
                 .render(api, cache, message["text"].as_str().unwrap_or(""))
                 .await;
+            let images = self.images(api, cache, message).await;
             let item_id = format!("{id}-{ts}");
-            urls.insert(item_id.clone(), permalink(identity, id, ts));
+            urls.insert(item_id.clone(), deep_link(identity, id, ts));
             messages.push(SlackMessage {
                 id: item_id,
                 author,
                 text,
+                images,
                 at: at as u64,
                 replies: message["reply_count"].as_u64().unwrap_or(0).min(9_999) as u32,
                 unread: is_unread,
@@ -393,6 +413,93 @@ impl SlackClient {
             });
         }
         Ok(mentions)
+    }
+
+    /// Caches up to two image thumbnails of a message and describes them.
+    async fn images(
+        &self,
+        api: &Api<'_>,
+        cache: &mut SlackCache,
+        message: &Value,
+    ) -> Vec<SlackImage> {
+        let Some(directory) = &self.image_dir else {
+            return Vec::new();
+        };
+        let mut images = Vec::new();
+        for file in message["files"].as_array().into_iter().flatten() {
+            if images.len() == MAX_IMAGES_PER_MESSAGE {
+                break;
+            }
+            let Some(id) = file["id"].as_str().filter(|id| is_slack_id(id)) else {
+                continue;
+            };
+            if !file["mimetype"]
+                .as_str()
+                .unwrap_or_default()
+                .starts_with("image/")
+            {
+                continue;
+            }
+            let Some((url, width, height)) = ["thumb_480", "thumb_360"].iter().find_map(|key| {
+                let url = file[*key].as_str()?;
+                let width = file[format!("{key}_w")].as_u64()?;
+                let height = file[format!("{key}_h")].as_u64()?;
+                Some((url, width, height))
+            }) else {
+                continue;
+            };
+            let Some(extension) = image_extension(url) else {
+                continue;
+            };
+            if !url.starts_with(IMAGE_URL_PREFIX) || width == 0 || height == 0 {
+                continue;
+            }
+            let name = format!("{id}.{extension}");
+            let path = directory.join(&name);
+            if !path.exists() {
+                if cache
+                    .image_failures
+                    .get(id)
+                    .is_some_and(|failed| failed.elapsed() < IMAGE_RETRY_AFTER)
+                {
+                    continue;
+                }
+                if let Err(error) = api.download_image(url, directory, &name).await {
+                    tracing::debug!(%error, file = id, "Slack thumbnail unavailable");
+                    cache.image_failures.insert(id.to_owned(), Instant::now());
+                    continue;
+                }
+                cache.image_failures.remove(id);
+            }
+            images.push(SlackImage {
+                file: name,
+                width: width.min(4_096) as u32,
+                height: height.min(4_096) as u32,
+            });
+        }
+        images
+    }
+
+    /// Removes cached thumbnails no published message refers to anymore.
+    fn prune_images(&self, channels: &[SlackChannel]) {
+        let Some(directory) = &self.image_dir else {
+            return;
+        };
+        let Ok(entries) = fs::read_dir(directory) else {
+            return;
+        };
+        let keep: Vec<&str> = channels
+            .iter()
+            .flat_map(|channel| &channel.messages)
+            .flat_map(|message| &message.images)
+            .map(|image| image.file.as_str())
+            .collect();
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            if !keep.iter().any(|kept| name == *kept) {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
     }
 
     async fn author(&self, api: &Api<'_>, cache: &mut SlackCache, message: &Value) -> String {
@@ -529,6 +636,66 @@ impl Api<'_> {
     }
 }
 
+impl Api<'_> {
+    /// Downloads one thumbnail into `directory/name`, keeping it only when
+    /// Slack answered 200 with an image (a missing files:read scope yields a
+    /// redirect to the sign-in page instead).
+    async fn download_image(&self, url: &str, directory: &Path, name: &str) -> Result<()> {
+        fs::create_dir_all(directory)
+            .with_context(|| format!("creating {}", directory.display()))?;
+        let partial = directory.join(format!(".{name}.part"));
+        let config = format!(
+            "url = \"{url}\"\nheader = \"Authorization: Bearer {}\"\noutput = \"{}\"\n",
+            self.token,
+            partial.display()
+        );
+        let mut child = Command::new(self.curl_bin)
+            .args([
+                "--silent",
+                "--max-time",
+                "15",
+                "--max-filesize",
+                MAX_IMAGE_BYTES,
+                "--write-out",
+                "%{http_code} %{content_type}",
+                "--config",
+                "-",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .with_context(|| format!("running {}", self.curl_bin.display()))?;
+        let mut stdin = child.stdin.take().context("curl stdin unavailable")?;
+        stdin.write_all(config.as_bytes()).await?;
+        drop(stdin);
+        let output = timeout(REQUEST_TIMEOUT, child.wait_with_output())
+            .await
+            .context("timed out downloading a Slack thumbnail")??;
+        let status = String::from_utf8_lossy(&output.stdout);
+        let is_image = output.status.success()
+            && status.starts_with("200 image/")
+            && fs::metadata(&partial).is_ok_and(|metadata| metadata.len() > 0);
+        if !is_image {
+            let _ = fs::remove_file(&partial);
+            bail!("Slack thumbnail download returned {status}");
+        }
+        fs::rename(&partial, directory.join(name))?;
+        Ok(())
+    }
+}
+
+fn image_extension(url: &str) -> Option<&'static str> {
+    let path = url
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(url)
+        .to_ascii_lowercase();
+    ["png", "jpg", "jpeg", "gif", "webp"]
+        .into_iter()
+        .find(|extension| path.ends_with(&format!(".{extension}")))
+}
+
 /// The token file must belong to the user alone and hold a user token.
 fn read_token(path: &Path) -> Result<String> {
     let metadata = fs::metadata(path).with_context(|| format!("reading {}", path.display()))?;
@@ -562,11 +729,13 @@ fn unavailable_channel(name: &str) -> SlackChannel {
     }
 }
 
-fn permalink(identity: &Identity, channel: &str, ts: &str) -> String {
+/// Opens the conversation in the Slack desktop app at the message rather
+/// than in a browser tab. `message` is not in Slack's documented deep link
+/// list; a client that ignores it still opens the right conversation.
+fn deep_link(identity: &Identity, channel: &str, ts: &str) -> String {
     format!(
-        "{}archives/{channel}/p{}",
-        identity.team_url,
-        ts.replace('.', "")
+        "slack://channel?team={}&id={channel}&message={ts}",
+        identity.team_id
     )
 }
 
@@ -590,27 +759,18 @@ fn is_slack_id(id: &str) -> bool {
             .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
 }
 
-fn is_workspace_url(url: &str) -> bool {
-    url.strip_prefix("https://")
-        .and_then(|rest| rest.strip_suffix('/'))
-        .and_then(|host| host.strip_suffix(".slack.com"))
-        .is_some_and(|workspace| {
-            !workspace.is_empty()
-                && workspace
-                    .bytes()
-                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-        })
-}
-
-/// Only permalinks into the signed-in workspace are opened.
-pub fn is_slack_url(url: &str) -> bool {
-    url.len() <= 512
-        && url
-            .find("/archives/")
-            .is_some_and(|split| is_workspace_url(&url[..=split]))
-        && !url
-            .chars()
-            .any(|character| character.is_whitespace() || character.is_control())
+/// Only `slack://channel` deep links built from validated ids are opened.
+pub fn is_slack_link(link: &str) -> bool {
+    let Some(query) = link.strip_prefix("slack://channel?team=") else {
+        return false;
+    };
+    let Some((team, rest)) = query.split_once("&id=") else {
+        return false;
+    };
+    let Some((channel, ts)) = rest.split_once("&message=") else {
+        return false;
+    };
+    is_slack_id(team) && is_slack_id(channel) && parse_ts(ts).is_some()
 }
 
 fn percent_encode(value: &str) -> String {
@@ -648,13 +808,16 @@ config=$(cat)
 case "$config" in *"Bearer xoxp-1-test"*) ;; *) exit 22 ;; esac
 case "$*" in *xoxp*) exit 23 ;; esac
 url=$(printf '%s\n' "$config" | sed -n 's/^url = "\(.*\)"$/\1/p')
+out=$(printf '%s\n' "$config" | sed -n 's/^output = "\(.*\)"$/\1/p')
 case "$url" in
-  *auth.test*) echo '{"ok":true,"user_id":"UME","url":"https://acme.slack.com/"}' ;;
+  https://files.slack.com/*-ok/*) printf 'PNG' > "$out"; printf '200 image/png'; exit 0 ;;
+  https://files.slack.com/*) printf '<html>' > "$out"; printf '302 text/html'; exit 0 ;;
+  *auth.test*) echo '{"ok":true,"user_id":"UME","team_id":"TACME","url":"https://acme.slack.com/"}' ;;
   *users.conversations*types=im*) echo '{"ok":true,"channels":[{"id":"D1","user":"UKARI"}]}' ;;
   *users.conversations*) echo '{"ok":true,"channels":[{"id":"CDEV","name":"dev"}],"response_metadata":{"next_cursor":""}}' ;;
   *conversations.info*channel=D1*) echo '{"ok":true,"channel":{"id":"D1","unread_count_display":2,"latest":{"ts":"1700000300.000200","text":"lunch?"}}}' ;;
   *conversations.info*) echo '{"ok":true,"channel":{"id":"CDEV","last_read":"1700000100.000100"}}' ;;
-  *conversations.history*) echo '{"ok":true,"messages":[{"ts":"1700000200.000300","user":"UKARI","text":"hi <@UME> see <https://x.dev|docs> &amp; <#CDEV|dev>","reply_count":3},{"ts":"1700000150.000100","subtype":"channel_join","user":"UOLA","text":"joined"},{"ts":"1700000050.000100","user":"UME","text":"older"}]}' ;;
+  *conversations.history*) echo '{"ok":true,"messages":[{"ts":"1700000200.000300","user":"UKARI","text":"hi <@UME> see <https://x.dev|docs> &amp; <#CDEV|dev>","reply_count":3,"files":[{"id":"FIMG1","mimetype":"image/png","thumb_480":"https://files.slack.com/files-tmb/T-FIMG1-ok/x_480.png","thumb_480_w":480,"thumb_480_h":135},{"id":"FIMG2","mimetype":"image/png","thumb_480":"https://files.slack.com/files-tmb/T-FIMG2-denied/x_480.png","thumb_480_w":480,"thumb_480_h":200}]},{"ts":"1700000150.000100","subtype":"channel_join","user":"UOLA","text":"joined"},{"ts":"1700000050.000100","user":"UME","text":"older"}]}' ;;
   *users.info*user=UKARI*) echo '{"ok":true,"user":{"name":"kari","profile":{"display_name":"Kari","real_name":"Kari N"}}}' ;;
   *users.info*user=UME*) echo '{"ok":true,"user":{"name":"me","profile":{"display_name":"","real_name":"Jon"}}}' ;;
   *search.messages*) echo '{"ok":true,"messages":{"matches":[{"channel":{"id":"CDEV","name":"dev"},"user":"UKARI","ts":"1700000200.000300","text":"hi <@UME>"}]}}' ;;
@@ -682,14 +845,33 @@ esac
             },
             fake_curl(dir),
         )
+        .with_image_dir(Some(dir.join("images")))
     }
 
     #[tokio::test]
     async fn samples_channels_dms_and_mentions() {
         let temp = tempfile::tempdir().unwrap();
+        let images = temp.path().join("images");
+        fs::create_dir_all(&images).unwrap();
+        fs::write(images.join("FSTALE.png"), "old").unwrap();
         let sample = client(temp.path(), 0o600).sample().await;
         let snapshot = &sample.snapshot;
         assert!(snapshot.available);
+
+        // Only a real image is kept; a sign-in redirect is discarded, and
+        // thumbnails no message refers to are pruned.
+        assert_eq!(
+            snapshot.channels[0].messages[1].images,
+            [SlackImage {
+                file: "FIMG1.png".into(),
+                width: 480,
+                height: 135
+            }]
+        );
+        assert!(images.join("FIMG1.png").exists());
+        assert!(!images.join("FIMG2.png").exists());
+        assert!(!images.join("FSTALE.png").exists());
+        assert_eq!(fs::read_dir(&images).unwrap().count(), 1);
 
         let dev = &snapshot.channels[0];
         assert!(dev.available);
@@ -714,11 +896,11 @@ esac
         let id = &dev.messages[1].id;
         assert_eq!(
             sample.urls[id],
-            "https://acme.slack.com/archives/CDEV/p1700000200000300"
+            "slack://channel?team=TACME&id=CDEV&message=1700000200.000300"
         );
-        assert!(is_slack_url(&sample.urls[id]));
+        assert!(is_slack_link(&sample.urls[id]));
         let published = serde_json::to_string(snapshot).unwrap();
-        assert!(!published.contains("https://") && !published.contains("xoxp"));
+        assert!(!published.contains("slack://") && !published.contains("xoxp"));
     }
 
     #[tokio::test]
@@ -730,15 +912,19 @@ esac
     }
 
     #[test]
-    fn only_workspace_permalinks_are_openable() {
-        assert!(is_slack_url(
-            "https://acme.slack.com/archives/C1/p1700000200000300"
+    fn only_validated_deep_links_are_openable() {
+        assert!(is_slack_link(
+            "slack://channel?team=TACME&id=C1&message=1700000200.000300"
         ));
-        assert!(!is_slack_url(
-            "https://acme.slack.com.evil.example/archives/C1/p1"
-        ));
-        assert!(!is_slack_url("https://evil.example/archives/C1/p1"));
-        assert!(!is_slack_url("http://acme.slack.com/archives/C1/p1"));
-        assert!(!is_slack_url("https://acme.slack.com/archives/C1/p1 --x"));
+        for link in [
+            "slack://channel?team=TACME&id=C1",
+            "slack://open?team=TACME&id=C1&message=1.2",
+            "slack://channel?team=tacme&id=C1&message=1.2",
+            "slack://channel?team=TACME&id=C1&message=1.2&x=y",
+            "https://acme.slack.com/archives/C1/p1",
+            "slack://channel?team=TACME&id=C1&message=1.2 --x",
+        ] {
+            assert!(!is_slack_link(link), "{link}");
+        }
     }
 }

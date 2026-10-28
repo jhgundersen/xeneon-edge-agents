@@ -14,6 +14,7 @@ Item {
     property bool restoreVoiceFocus: false
     property bool previewMicroOpen: false
     property string hostName: "LOCAL"
+    property string slackImageDirectory: ""
 
     readonly property real designWidth: 2560
     readonly property real designHeight: 720
@@ -52,6 +53,7 @@ Item {
             restoreVoiceFocus: root.restoreVoiceFocus
             previewMicroOpen: root.previewMicroOpen
             hostName: root.hostName
+            slackImageDirectory: root.slackImageDirectory
         }
     }
 }

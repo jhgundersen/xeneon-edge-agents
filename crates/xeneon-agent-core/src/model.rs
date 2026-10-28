@@ -193,11 +193,24 @@ pub struct SlackMessage {
     pub id: String,
     pub author: String,
     pub text: String,
+    /// Thumbnails the daemon downloaded into its runtime image directory.
+    #[serde(default)]
+    pub images: Vec<SlackImage>,
     /// Unix seconds.
     pub at: u64,
     pub replies: u32,
     /// Posted after the user's last-read marker.
     pub unread: bool,
+}
+
+/// A Slack image thumbnail cached by the daemon. `file` is a bare file name
+/// inside `$XDG_RUNTIME_DIR/xeneon-edge-agents/slack-images`; the portal
+/// never fetches anything from Slack itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlackImage {
+    pub file: String,
+    pub width: u32,
+    pub height: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -102,6 +102,29 @@ TestCase {
         }
     }
 
+    function test_slackImagesAreBareCacheFileNamesOnly() {
+        var normalized = store.normalizeSlack({
+            "available": true,
+            "channels": [{
+                "name": "dev", "available": true, "unread": 0, "unread_capped": false,
+                "messages": [{
+                    "id": "CDEV-1700000200.000300", "author": "Kari", "text": "look",
+                    "at": 1700000200, "replies": 0, "unread": false,
+                    "images": [
+                        {"file": "FIMG1.png", "width": 480, "height": 135},
+                        {"file": "../../etc/passwd", "width": 1, "height": 1},
+                        {"file": "https://files.slack.com/x.png", "width": 1, "height": 1},
+                        {"file": "FIMG2.png", "width": 0, "height": 10}
+                    ]
+                }]
+            }],
+            "notifications": []
+        })
+        var images = normalized.channels[0].messages[0].images
+        compare(images.length, 1)
+        compare(images[0].file, "FIMG1.png")
+    }
+
     function test_acceptsFullSnapshotAndSortsAttention() {
         var accepted = store.ingestEnvelope(snapshot(
             10,

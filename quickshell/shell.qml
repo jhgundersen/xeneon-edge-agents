@@ -42,6 +42,13 @@ ShellRoot {
                 || Quickshell.env("HOSTNAME")
                 || "LOCAL"
         )
+    // Slack thumbnails the daemon cached; the portal only reads them.
+    readonly property string slackImageDirectory: {
+        var runtimeDirectory = String(Quickshell.env("XDG_RUNTIME_DIR") || "")
+        return runtimeDirectory === ""
+            ? ""
+            : runtimeDirectory + "/xeneon-edge-agents/slack-images"
+    }
     readonly property string settingsPath: {
         var configured = String(
             Quickshell.env("XENEON_EDGE_SETTINGS_PATH") || ""
@@ -242,6 +249,7 @@ ShellRoot {
             restoreVoiceFocus: root.livePreviewMode
             previewMicroOpen: root.previewMicroOpen
             hostName: root.hostName
+            slackImageDirectory: root.slackImageDirectory
         }
     }
 }

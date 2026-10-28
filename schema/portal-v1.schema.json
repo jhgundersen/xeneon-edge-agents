@@ -76,6 +76,19 @@
                     "id": { "$ref": "#/$defs/slackId" },
                     "author": { "type": "string", "maxLength": 48 },
                     "text": { "type": "string", "maxLength": 500 },
+                    "images": {
+                      "type": "array",
+                      "maxItems": 2,
+                      "items": {
+                        "type": "object",
+                        "required": ["file", "width", "height"],
+                        "properties": {
+                          "file": { "type": "string", "pattern": "^F[A-Z0-9]{1,23}\\.(png|jpg|jpeg|gif|webp)$" },
+                          "width": { "type": "integer", "minimum": 1 },
+                          "height": { "type": "integer", "minimum": 1 }
+                        }
+                      }
+                    },
                     "at": { "type": "integer", "minimum": 0 },
                     "replies": { "type": "integer", "minimum": 0 },
                     "unread": { "type": "boolean" }

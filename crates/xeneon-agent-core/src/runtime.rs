@@ -32,7 +32,7 @@ use crate::{
         VoiceState, sort_agents,
     },
     protocol::{command_capability_matches, validate_command},
-    slack::{SlackClient, is_slack_url},
+    slack::{SlackClient, is_slack_link},
     spotify::{SpotifyClient, spotify_changed},
     t3code::{self, T3codeClient, T3codeTarget},
     usage::UsageCollector,
@@ -144,7 +144,8 @@ struct RuntimeState {
     herdr_order_daemon_owned: bool,
     /// URLs of published Basecamp items by id; never sent to the portal.
     basecamp_urls: HashMap<String, String>,
-    /// Permalinks of published Slack messages by id; never sent to the portal.
+    /// `slack://` deep links of published Slack messages by id; never sent to
+    /// the portal.
     slack_urls: HashMap<String, String>,
     t3code_sequence: Option<u64>,
     targets: HashMap<String, AgentTarget>,
@@ -933,8 +934,8 @@ impl DaemonRuntime {
         }
 
         if command.action == ActionKind::SlackOpen {
-            // As with Basecamp, the daemon resolves the permalink itself and
-            // opens only links into the signed-in workspace.
+            // As with Basecamp, the daemon resolves the link itself; it opens
+            // only validated deep links, in the Slack desktop app.
             let url = {
                 let state = self.state.read().await;
                 command
@@ -942,7 +943,7 @@ impl DaemonRuntime {
                     .as_deref()
                     .and_then(|id| state.slack_urls.get(id).cloned())
             };
-            let Some(url) = url.filter(|url| is_slack_url(url)) else {
+            let Some(url) = url.filter(|url| is_slack_link(url)) else {
                 return action_error(
                     &command.request_id,
                     "target_unavailable",
