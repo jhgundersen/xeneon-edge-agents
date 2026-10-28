@@ -459,14 +459,21 @@ async fn read_agent_order(socket_path: &Path) -> Result<AgentOrderMode> {
     Ok(mode)
 }
 
-/// A named tab wins. Herdr numbers unnamed tabs, so an all-digit label says
-/// nothing; those cards are named `<agent> · <workspace>` instead.
+/// The name given to the agent's pane wins, then a named tab. Herdr numbers
+/// unnamed tabs, so an all-digit label says nothing; with neither, the card
+/// is `<agent> · <workspace>`. A name equal to the agent type counts as none.
 fn display_name(
     raw: &HerdrAgent,
     tabs: &HashMap<String, String>,
     agent_name: &str,
     workspace: Option<&str>,
 ) -> String {
+    let given = nonblank(raw.display_agent.as_deref())
+        .or_else(|| nonblank(raw.name.as_deref()))
+        .filter(|name| !name.eq_ignore_ascii_case(agent_name));
+    if let Some(name) = given {
+        return name.to_owned();
+    }
     if let Some(label) = tabs
         .get(&raw.tab_id)
         .and_then(|label| nonblank(Some(label)))
@@ -474,12 +481,9 @@ fn display_name(
     {
         return label.to_owned();
     }
-    let agent = nonblank(raw.display_agent.as_deref())
-        .or_else(|| nonblank(raw.name.as_deref()))
-        .unwrap_or(agent_name);
     match nonblank(workspace) {
-        Some(workspace) => format!("{agent} · {workspace}"),
-        None => agent.to_owned(),
+        Some(workspace) => format!("{agent_name} · {workspace}"),
+        None => agent_name.to_owned(),
     }
 }
 
@@ -726,7 +730,7 @@ mod tests {
     }
 
     #[test]
-    fn tab_label_is_deserialized_and_wins_card_identity() {
+    fn pane_name_wins_over_the_tab_label_in_card_identity() {
         let response: SnapshotResponse = serde_json::from_value(json!({
             "result": {
                 "snapshot": {
@@ -757,6 +761,13 @@ mod tests {
 
         assert_eq!(
             display_name(raw, &tabs, "codex", Some("xeneon")),
+            "display agent"
+        );
+        let mut unnamed = raw.clone();
+        unnamed.display_agent = None;
+        unnamed.name = Some("codex".into());
+        assert_eq!(
+            display_name(&unnamed, &tabs, "codex", Some("xeneon")),
             "review portal"
         );
     }

@@ -49,8 +49,9 @@ Agent statuses are exactly `blocked`, `done`, `working`, `idle`, or `unknown`.
 clear it, and `idle` otherwise preserves it. A new Herdr focus transition to
 that agent or a successful portal `open` acknowledges it.
 
-Agent `display_name` comes from the matching nonblank Herdr tab label, then the
-safe `display_agent`, agent `name`, and canonical agent identifier fallbacks.
+Agent `display_name` is the safe `display_agent` or agent `name` given to the
+pane (unless it merely repeats the agent type), then the matching Herdr tab
+label unless it is Herdr's all-digit default, then `<agent> · <workspace>`.
 Terminal titles and prompt-derived content are never display-name sources.
 Optional `repository` and `worktree` values are sanitized checkout identity,
 not terminal content. `launch_pending` means Herdr has observed a launch request
