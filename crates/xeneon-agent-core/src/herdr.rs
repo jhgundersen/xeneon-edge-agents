@@ -133,7 +133,7 @@ struct HerdrTab {
     label: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct HerdrAgent {
     terminal_id: String,
     #[serde(default)]
@@ -270,7 +270,12 @@ impl HerdrClient {
                 |workspace| format!("{} · {}", workspace.number, workspace.label),
             );
             let agent_name = nonblank(raw.agent.as_deref()).unwrap_or("agent").to_owned();
-            let display_name = display_name(&raw, &tabs, &agent_name);
+            let display_name = display_name(
+                &raw,
+                &tabs,
+                &agent_name,
+                workspace.map(|workspace| workspace.label.as_str()),
+            );
             let cwd = raw.foreground_cwd.as_ref().or(raw.cwd.as_ref());
             let repository = workspace
                 .and_then(|workspace| workspace.worktree.as_ref())
@@ -454,13 +459,28 @@ async fn read_agent_order(socket_path: &Path) -> Result<AgentOrderMode> {
     Ok(mode)
 }
 
-fn display_name(raw: &HerdrAgent, tabs: &HashMap<String, String>, agent_name: &str) -> String {
-    tabs.get(&raw.tab_id)
+/// A named tab wins. Herdr numbers unnamed tabs, so an all-digit label says
+/// nothing; those cards are named `<agent> · <workspace>` instead.
+fn display_name(
+    raw: &HerdrAgent,
+    tabs: &HashMap<String, String>,
+    agent_name: &str,
+    workspace: Option<&str>,
+) -> String {
+    if let Some(label) = tabs
+        .get(&raw.tab_id)
         .and_then(|label| nonblank(Some(label)))
-        .or_else(|| nonblank(raw.display_agent.as_deref()))
+        .filter(|label| !label.chars().all(|character| character.is_ascii_digit()))
+    {
+        return label.to_owned();
+    }
+    let agent = nonblank(raw.display_agent.as_deref())
         .or_else(|| nonblank(raw.name.as_deref()))
-        .unwrap_or(agent_name)
-        .to_owned()
+        .unwrap_or(agent_name);
+    match nonblank(workspace) {
+        Some(workspace) => format!("{agent} · {workspace}"),
+        None => agent.to_owned(),
+    }
 }
 
 fn nonblank(value: Option<&str>) -> Option<&str> {
@@ -735,7 +755,10 @@ mod tests {
             .map(|tab| (tab.tab_id, tab.label))
             .collect();
 
-        assert_eq!(display_name(raw, &tabs, "codex"), "review portal");
+        assert_eq!(
+            display_name(raw, &tabs, "codex", Some("xeneon")),
+            "review portal"
+        );
     }
 
     #[test]
@@ -752,7 +775,10 @@ mod tests {
             "pane_id": "w1:p1"
         }))
         .unwrap();
-        assert_eq!(display_name(&raw, &HashMap::new(), "codex"), "named agent");
+        assert_eq!(
+            display_name(&raw, &HashMap::new(), "codex", None),
+            "named agent"
+        );
 
         let canonical_only: HerdrAgent = serde_json::from_value(json!({
             "terminal_id": "term",
@@ -767,8 +793,22 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(
-            display_name(&canonical_only, &HashMap::new(), "codex"),
+            display_name(&canonical_only, &HashMap::new(), "codex", None),
             "codex"
+        );
+
+        // Herdr's default numbered tab names carry no meaning.
+        let numbered = HashMap::from([("w1:t1".to_owned(), "1".to_owned())]);
+        let mut in_numbered_tab = canonical_only.clone();
+        in_numbered_tab.tab_id = "w1:t1".into();
+        assert_eq!(
+            display_name(&in_numbered_tab, &numbered, "codex", Some("lectern")),
+            "codex · lectern"
+        );
+        let named = HashMap::from([("w1:t1".to_owned(), "review".to_owned())]);
+        assert_eq!(
+            display_name(&in_numbered_tab, &named, "codex", Some("lectern")),
+            "review"
         );
     }
 
