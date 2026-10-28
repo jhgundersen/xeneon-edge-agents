@@ -193,6 +193,8 @@ Item {
             return "NOW PLAYING"
         if (dashboard === "basecamp")
             return "BASECAMP"
+        if (dashboard === "slack")
+            return "SLACK"
         return "AGENT COMMAND"
     }
 
@@ -222,6 +224,11 @@ Item {
             return store.basecamp.unread_count
                 + (store.basecamp.unreads_capped ? "+" : "") + " UNREAD"
         }
+        if (dashboard === "slack") {
+            if (store.slack.available !== true)
+                return "OFFLINE"
+            return store.slack.notifications.length + " FOR YOU"
+        }
         var working = 0
         var waiting = 0
         for (var index = 0; index < store.agents.length; index += 1) {
@@ -238,6 +245,8 @@ Item {
             return theme.green
         if (dashboard === "basecamp")
             return theme.yellow
+        if (dashboard === "slack")
+            return theme.magenta
         return theme.accent
     }
 
@@ -1414,6 +1423,28 @@ Item {
         onInteracted: root.activity.noteUserActivity()
         onOpenRequested: function(itemId) {
             root.bridge.openBasecampItem(itemId)
+        }
+    }
+
+    SlackView {
+        objectName: "slackDashboard"
+        anchors {
+            left: parent.left
+            right: parent.right
+            top: header.bottom
+            bottom: parent.bottom
+            leftMargin: 24
+            rightMargin: 24
+            topMargin: 8
+            bottomMargin: 16
+        }
+        visible: root.currentDashboard === "slack"
+        slack: root.store.slack
+        theme: root.theme
+        enabled: root.controlCenterInteractive
+        onInteracted: root.activity.noteUserActivity()
+        onOpenRequested: function(itemId) {
+            root.bridge.openSlackItem(itemId)
         }
     }
 

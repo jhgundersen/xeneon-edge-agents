@@ -8,6 +8,8 @@
 #   spotify   Now playing in the Spotify desktop client, with controls
 #   basecamp  Basecamp card tables as lanes plus the Hey! inbox, read through
 #             the signed-in Basecamp CLI (`basecamp login`)
+#   slack     Recent messages in chosen channels plus your unread DMs and
+#             @-mentions, read with your own Slack user token (see below)
 
 dashboards = ["agents", "basecamp", "spotify"]
 
@@ -23,3 +25,11 @@ dashboards = ["agents", "basecamp", "spotify"]
 label = "Sprint"
 project = 43666346
 card_table = 9711341101
+
+# Slack: create the read-only app from config/slack/app-manifest.yaml, install
+# it, and put its User OAuth Token in slack.toml beside this file:
+#   install -m 600 /dev/null ~/.config/xeneon-edge-agents/slack.toml
+#   token = "xoxp-..."
+# Then add "slack" to `dashboards` and list the channels to show as tabs.
+# [slack]
+# channels = ["dev", "support"]

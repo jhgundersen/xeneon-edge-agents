@@ -32,6 +32,7 @@ use crate::{
         VoiceState, sort_agents,
     },
     protocol::{command_capability_matches, validate_command},
+    slack::{SlackClient, is_slack_url},
     spotify::{SpotifyClient, spotify_changed},
     t3code::{self, T3codeClient, T3codeTarget},
     usage::UsageCollector,
@@ -42,6 +43,7 @@ const INVALIDATION_COALESCE: Duration = Duration::from_millis(200);
 const SPOTIFY_REFRESH: Duration = Duration::from_millis(1_000);
 const SPOTIFY_POSITION_TOLERANCE_MS: u64 = 1_500;
 const BASECAMP_REFRESH: Duration = Duration::from_secs(60);
+const SLACK_REFRESH: Duration = Duration::from_secs(30);
 const BACKEND_STATE_FILE_NAME: &str = "xeneon-edge-agents/agent-backend.toml";
 /// Invalidation key used when the portal switches agent managers.
 const BACKEND_SWITCH_INVALIDATION: &str = "\0backend";
@@ -142,6 +144,8 @@ struct RuntimeState {
     herdr_order_daemon_owned: bool,
     /// URLs of published Basecamp items by id; never sent to the portal.
     basecamp_urls: HashMap<String, String>,
+    /// Permalinks of published Slack messages by id; never sent to the portal.
+    slack_urls: HashMap<String, String>,
     t3code_sequence: Option<u64>,
     targets: HashMap<String, AgentTarget>,
     observed: HashMap<String, ObservedAgent>,
@@ -174,6 +178,7 @@ pub struct DaemonRuntime {
     desktop: Arc<DesktopController>,
     spotify: SpotifyClient,
     basecamp: BasecampClient,
+    slack: SlackClient,
     voice: Arc<Mutex<VoiceController>>,
     order_operation: Arc<Mutex<()>>,
     updates: watch::Sender<String>,
@@ -226,6 +231,7 @@ impl DaemonRuntime {
         let voice = VoiceController::from_config(&config, snapshot.daemon_epoch.clone())?;
         let t3code = T3codeClient::from_config(config.t3code.home.as_deref())?;
         let basecamp = BasecampClient::new(config.basecamp.clone());
+        let slack = SlackClient::new(config.slack.clone());
         Ok((
             Self {
                 herdr: HerdrClient::new(config.herdr_bin.clone()),
@@ -239,6 +245,7 @@ impl DaemonRuntime {
                     herdr_order: persisted.herdr_order,
                     herdr_order_daemon_owned: false,
                     basecamp_urls: HashMap::new(),
+                    slack_urls: HashMap::new(),
                     t3code_sequence: None,
                     targets: HashMap::new(),
                     observed: HashMap::new(),
@@ -249,6 +256,7 @@ impl DaemonRuntime {
                 desktop: Arc::new(desktop),
                 spotify: SpotifyClient::default(),
                 basecamp,
+                slack,
                 voice: Arc::new(Mutex::new(voice)),
                 order_operation: Arc::new(Mutex::new(())),
                 updates,
@@ -312,6 +320,9 @@ impl DaemonRuntime {
         let basecamp_enabled = self.config.dashboards.contains(&DashboardKind::Basecamp);
         let mut basecamp_tick = interval(BASECAMP_REFRESH);
         basecamp_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        let slack_enabled = self.config.dashboards.contains(&DashboardKind::Slack);
+        let mut slack_tick = interval(SLACK_REFRESH);
+        slack_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut spotify_tick = interval(SPOTIFY_REFRESH);
         let mut spotify_published_at = Instant::now();
         spotify_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -357,6 +368,17 @@ impl DaemonRuntime {
                     state.basecamp_urls = sample.urls;
                     if state.snapshot.basecamp != sample.snapshot {
                         state.snapshot.basecamp = sample.snapshot;
+                        state.snapshot.generated_at_ms = now_ms();
+                        drop(state);
+                        self.publish().await;
+                    }
+                }
+                _ = slack_tick.tick(), if slack_enabled => {
+                    let sample = self.slack.sample().await;
+                    let mut state = self.state.write().await;
+                    state.slack_urls = sample.urls;
+                    if state.snapshot.slack != sample.snapshot {
+                        state.snapshot.slack = sample.snapshot;
                         state.snapshot.generated_at_ms = now_ms();
                         drop(state);
                         self.publish().await;
@@ -910,6 +932,43 @@ impl DaemonRuntime {
             };
         }
 
+        if command.action == ActionKind::SlackOpen {
+            // As with Basecamp, the daemon resolves the permalink itself and
+            // opens only links into the signed-in workspace.
+            let url = {
+                let state = self.state.read().await;
+                command
+                    .item_id
+                    .as_deref()
+                    .and_then(|id| state.slack_urls.get(id).cloned())
+            };
+            let Some(url) = url.filter(|url| is_slack_url(url)) else {
+                return action_error(
+                    &command.request_id,
+                    "target_unavailable",
+                    "Slack message is no longer on the dashboard",
+                );
+            };
+            if !self.config.dashboards.contains(&DashboardKind::Slack) {
+                return action_error(
+                    &command.request_id,
+                    "target_unavailable",
+                    "the Slack dashboard is not enabled",
+                );
+            }
+            return match self.desktop.open_url(&url).await {
+                Ok(()) => action_ok(&command.request_id, "slack_item_opened"),
+                Err(error) => {
+                    tracing::warn!(%error, "Slack item open failed");
+                    action_error(
+                        &command.request_id,
+                        "target_unavailable",
+                        "Slack message could not be opened",
+                    )
+                }
+            };
+        }
+
         if command.action == ActionKind::BasecampOpen {
             // The portal names a published item; the daemon resolves the URL
             // from its own last sample and opens only Basecamp links.
@@ -1049,6 +1108,7 @@ impl DaemonRuntime {
             | ActionKind::SpotifyNext
             | ActionKind::SpotifyPrevious
             | ActionKind::BasecampOpen
+            | ActionKind::SlackOpen
             | ActionKind::VoiceStart
             | ActionKind::VoiceStop
             | ActionKind::VoiceCancel

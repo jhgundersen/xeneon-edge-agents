@@ -36,6 +36,7 @@ QtObject {
     property var dashboards: ["agents"]
     property var spotify: ({"available": false})
     property var basecamp: ({"available": false})
+    property var slack: ({"available": false})
     property var health: ({})
     property var voice: ({
         "available": false,
@@ -119,6 +120,7 @@ QtObject {
         dashboards = ["agents"]
         spotify = {"available": false}
         basecamp = {"available": false}
+        slack = {"available": false}
         health = {}
         voice = {
             "available": false,
@@ -316,7 +318,7 @@ QtObject {
     }
 
     function normalizeDashboards(value) {
-        var known = ["agents", "spotify", "basecamp"]
+        var known = ["agents", "spotify", "basecamp", "slack"]
         var result = []
         if (Array.isArray(value)) {
             for (var index = 0; index < value.length; index += 1) {
@@ -439,6 +441,72 @@ QtObject {
             "unreads_capped": value.unreads_capped === true,
             "notifications": notifications,
             "boards": boards
+        }
+    }
+
+    // Slack items carry no links or tokens; ids are `<conversation>-<ts>`
+    // and only ever sent back to the daemon, which owns the permalinks.
+    function normalizeSlack(value) {
+        if (value === null || typeof value !== "object" || value.available !== true)
+            return {"available": false}
+        function itemId(id) {
+            var text = safeString(id, "", 48)
+            return /^[A-Z0-9]{1,24}-[0-9]{1,12}\.[0-9]{1,8}$/.test(text) ? text : ""
+        }
+        function count(number) {
+            return Math.max(0, Math.floor(finiteNumber(number, 0)))
+        }
+        var channels = []
+        var sourceChannels = Array.isArray(value.channels) ? value.channels : []
+        for (var c = 0; c < sourceChannels.length && c < 6; c += 1) {
+            var channel = sourceChannels[c] || {}
+            var messages = []
+            var sourceMessages = Array.isArray(channel.messages) ? channel.messages : []
+            for (var m = 0; m < sourceMessages.length && m < 20; m += 1) {
+                var message = sourceMessages[m] || {}
+                var id = itemId(message.id)
+                if (id === "")
+                    continue
+                messages.push({
+                    "id": id,
+                    "author": safeString(message.author, "", 48),
+                    "text": safeString(message.text, "", 500),
+                    "at": count(message.at),
+                    "replies": count(message.replies),
+                    "unread": message.unread === true
+                })
+            }
+            channels.push({
+                "name": safeString(channel.name, "", 48),
+                "available": channel.available === true,
+                "unread": count(channel.unread),
+                "unread_capped": channel.unread_capped === true,
+                "messages": messages
+            })
+        }
+        var notifications = []
+        var sourceNotifications = Array.isArray(value.notifications)
+            ? value.notifications
+            : []
+        for (var n = 0; n < sourceNotifications.length && n < 10; n += 1) {
+            var item = sourceNotifications[n] || {}
+            var notificationId = itemId(item.id)
+            if (notificationId === "")
+                continue
+            notifications.push({
+                "id": notificationId,
+                "kind": item.kind === "dm" ? "dm" : "mention",
+                "source": safeString(item.source, "", 49),
+                "author": safeString(item.author, "", 48),
+                "text": safeString(item.text, "", 500),
+                "at": count(item.at),
+                "unread": count(item.unread)
+            })
+        }
+        return {
+            "available": true,
+            "channels": channels,
+            "notifications": notifications
         }
     }
 
@@ -898,6 +966,7 @@ QtObject {
         dashboards = normalizeDashboards(snapshot.dashboards)
         spotify = normalizeSpotify(snapshot.spotify)
         basecamp = normalizeBasecamp(snapshot.basecamp)
+        slack = normalizeSlack(snapshot.slack)
         var nextSignature = semanticSignature(
             nextConnection,
             nextAgents,

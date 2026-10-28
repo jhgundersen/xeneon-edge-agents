@@ -127,7 +127,10 @@ per enabled dashboard with a short live status. Besides the agent command
 center there is a Spotify now-playing dashboard with play/pause, next, and
 previous, and a Basecamp dashboard that shows configured card tables as lanes
 next to the Hey! inbox, read through the signed-in Basecamp CLI; tapping a
-card or item opens it in the browser.
+card or item opens it in the browser. A Slack dashboard shows recent messages
+from chosen channels next to your unread DMs and @-mentions, read with a
+read-only Slack app you create from `config/slack/app-manifest.yaml`; the
+user token stays in an owner-only `slack.toml` and never reaches the portal.
 The desktop apps the daemon may focus or launch are configured per machine in
 `~/.config/xeneon-edge-agents/desktop-apps.toml` (Spotify and Discord when the
 file is absent; see `config/xeneon-edge-agents/desktop-apps.toml.example`).

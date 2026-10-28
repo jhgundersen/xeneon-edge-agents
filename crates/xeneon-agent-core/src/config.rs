@@ -30,6 +30,7 @@ pub struct Config {
     /// `dashboards.toml` beside this file.
     pub dashboards: Vec<DashboardKind>,
     pub basecamp: BasecampConfig,
+    pub slack: SlackConfig,
     pub t3code: T3codeConfig,
 }
 
@@ -85,6 +86,21 @@ struct DashboardsFile {
     dashboards: Vec<DashboardKind>,
     #[serde(default)]
     basecamp: Option<BasecampConfig>,
+    #[serde(default)]
+    slack: Option<SlackConfig>,
+}
+
+pub const MAX_SLACK_CHANNELS: usize = 6;
+/// The Slack user token lives in its own owner-only file beside config.toml.
+pub const SLACK_TOKEN_FILE_NAME: &str = "slack.toml";
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SlackConfig {
+    /// Channel names (without '#') shown as tabs, in order.
+    pub channels: Vec<String>,
+    /// Token file; `slack.toml` beside config.toml when unset.
+    pub token_file: Option<PathBuf>,
 }
 
 pub const MAX_CARD_TABLES: usize = 6;
@@ -236,6 +252,7 @@ impl Default for Config {
             desktop: DesktopConfig::default(),
             dashboards: vec![DashboardKind::Agents],
             basecamp: BasecampConfig::default(),
+            slack: SlackConfig::default(),
             t3code: T3codeConfig::default(),
         }
     }
@@ -295,6 +312,14 @@ impl Config {
             config.dashboards = file.dashboards;
             if let Some(basecamp) = file.basecamp {
                 config.basecamp = basecamp;
+            }
+            if let Some(mut slack) = file.slack {
+                if slack.token_file.is_none() {
+                    slack.token_file = dashboards_path
+                        .parent()
+                        .map(|directory| directory.join(SLACK_TOKEN_FILE_NAME));
+                }
+                config.slack = slack;
             }
         }
         config.apply_runtime_output(runtime_output)?;
@@ -402,6 +427,25 @@ impl Config {
             let label = table.label.trim();
             if label.is_empty() || label.chars().count() > 24 {
                 anyhow::bail!("basecamp.card_tables labels must be 1-24 characters");
+            }
+        }
+        if self.slack.channels.len() > MAX_SLACK_CHANNELS {
+            anyhow::bail!("slack.channels allows at most {MAX_SLACK_CHANNELS} channels");
+        }
+        for (index, channel) in self.slack.channels.iter().enumerate() {
+            let valid = !channel.is_empty()
+                && channel.chars().count() <= 80
+                && channel.chars().all(|character| {
+                    character.is_lowercase()
+                        || character.is_ascii_digit()
+                        || "-_.".contains(character)
+                        || (character.is_alphabetic() && !character.is_uppercase())
+                });
+            if !valid {
+                anyhow::bail!("slack.channels must be channel names like \"dev\", without '#'");
+            }
+            if self.slack.channels[..index].contains(channel) {
+                anyhow::bail!("slack.channels lists \"{channel}\" more than once");
             }
         }
         if self.desktop.apps.len() > MAX_DESKTOP_APPS {

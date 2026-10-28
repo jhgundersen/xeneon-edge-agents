@@ -14,6 +14,7 @@ QtObject {
         "spotify_next",
         "spotify_previous",
         "basecamp_open",
+        "slack_open",
         "voice_start",
         "voice_stop",
         "voice_cancel",
@@ -56,6 +57,7 @@ QtObject {
             || action === "spotify_next"
             || action === "spotify_previous"
             || action === "basecamp_open"
+            || action === "slack_open"
             || action === "voice_start"
             || action === "voice_stop"
             || action === "voice_cancel"
@@ -104,8 +106,15 @@ QtObject {
             return null
         }
 
-        if (action !== "basecamp_open" && normalizedItemId !== "") {
-            lastError = "Only basecamp_open accepts an item_id"
+        if (action === "slack_open"
+                && !/^[A-Z0-9]{1,24}-[0-9]{1,12}\.[0-9]{1,8}$/.test(normalizedItemId)) {
+            lastError = "Slack open requires a published item_id"
+            return null
+        }
+
+        if (action !== "basecamp_open" && action !== "slack_open"
+                && normalizedItemId !== "") {
+            lastError = "Only basecamp_open and slack_open accept an item_id"
             return null
         }
 

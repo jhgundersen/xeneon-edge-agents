@@ -78,6 +78,7 @@ pub enum ActionKind {
     SpotifyNext,
     SpotifyPrevious,
     BasecampOpen,
+    SlackOpen,
     VoiceStart,
     VoiceStop,
     VoiceCancel,
@@ -95,6 +96,7 @@ pub enum DashboardKind {
     Agents,
     Spotify,
     Basecamp,
+    Slack,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -181,6 +183,56 @@ pub struct BasecampSnapshot {
     pub unreads_capped: bool,
     pub notifications: Vec<BasecampNotification>,
     pub boards: Vec<BasecampBoard>,
+}
+
+/// One message in a watched Slack channel, with mentions and links already
+/// rendered to plain text. Its permalink stays in the daemon; the portal
+/// opens it by `id` with `slack_open`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlackMessage {
+    pub id: String,
+    pub author: String,
+    pub text: String,
+    /// Unix seconds.
+    pub at: u64,
+    pub replies: u32,
+    /// Posted after the user's last-read marker.
+    pub unread: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlackChannel {
+    pub name: String,
+    pub available: bool,
+    pub unread: u32,
+    /// The unread count reached the fetched page; it is a lower bound.
+    pub unread_capped: bool,
+    /// Newest last.
+    pub messages: Vec<SlackMessage>,
+}
+
+/// A direct message or @-mention for the notification strip.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlackNotification {
+    pub id: String,
+    /// `dm` or `mention`.
+    pub kind: String,
+    /// Sender for a DM; channel name for a mention.
+    pub source: String,
+    pub author: String,
+    pub text: String,
+    pub at: u64,
+    /// Unread DM messages; 0 for mentions.
+    pub unread: u32,
+}
+
+/// Watched channels plus DM and mention notifications, read with the user's
+/// own Slack user token. `available` is false without a usable token.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlackSnapshot {
+    pub available: bool,
+    pub channels: Vec<SlackChannel>,
+    pub notifications: Vec<SlackNotification>,
 }
 
 /// Which agent manager the daemon observes and routes agent actions to.
@@ -441,6 +493,9 @@ pub struct PortalSnapshot {
     /// Populated only while the Basecamp dashboard is enabled.
     #[serde(default)]
     pub basecamp: BasecampSnapshot,
+    /// Populated only while the Slack dashboard is enabled.
+    #[serde(default)]
+    pub slack: SlackSnapshot,
     pub voice: VoiceSnapshot,
     pub usage: AiUsageSnapshot,
     pub micro: MicroSnapshot,
@@ -470,6 +525,7 @@ impl PortalSnapshot {
             dashboards: vec![DashboardKind::Agents],
             spotify: SpotifySnapshot::default(),
             basecamp: BasecampSnapshot::default(),
+            slack: SlackSnapshot::default(),
             voice: VoiceSnapshot::default(),
             usage: AiUsageSnapshot::default(),
             micro: MicroSnapshot::default(),

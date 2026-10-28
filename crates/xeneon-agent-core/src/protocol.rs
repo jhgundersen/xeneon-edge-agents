@@ -20,7 +20,7 @@ pub enum CommandError {
     MissingAppId,
     #[error("app_id is not accepted for this action")]
     UnexpectedAppId,
-    #[error("item_id is required for basecamp_open")]
+    #[error("a published item_id is required for basecamp_open and slack_open")]
     MissingItemId,
     #[error("item_id is not accepted for this action")]
     UnexpectedItemId,
@@ -48,6 +48,8 @@ pub fn validate_command(command: &PortalCommand) -> Result<(), CommandError> {
             if !id.is_empty() && id.len() <= 20 && id.bytes().all(|byte| byte.is_ascii_digit()) => {
         }
         (ActionKind::BasecampOpen, _) => return Err(CommandError::MissingItemId),
+        (ActionKind::SlackOpen, Some(id)) if is_slack_item_id(id) => {}
+        (ActionKind::SlackOpen, _) => return Err(CommandError::MissingItemId),
         (_, None) => {}
         (_, Some(_)) => return Err(CommandError::UnexpectedItemId),
     }
@@ -59,6 +61,7 @@ pub fn validate_command(command: &PortalCommand) -> Result<(), CommandError> {
         | ActionKind::SpotifyNext
         | ActionKind::SpotifyPrevious
         | ActionKind::BasecampOpen
+        | ActionKind::SlackOpen
         | ActionKind::VoiceStart
         | ActionKind::VoiceStop
         | ActionKind::VoiceCancel
@@ -92,6 +95,26 @@ pub fn validate_command(command: &PortalCommand) -> Result<(), CommandError> {
     }
 
     Ok(())
+}
+
+/// Slack items are `<conversation id>-<message ts>`, e.g. `C123-1700000000.000100`.
+fn is_slack_item_id(id: &str) -> bool {
+    let Some((conversation, ts)) = id.split_once('-') else {
+        return false;
+    };
+    let Some((seconds, micros)) = ts.split_once('.') else {
+        return false;
+    };
+    (1..=24).contains(&conversation.len())
+        && conversation
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
+        && (1..=12).contains(&seconds.len())
+        && (1..=8).contains(&micros.len())
+        && seconds
+            .bytes()
+            .chain(micros.bytes())
+            .all(|byte| byte.is_ascii_digit())
 }
 
 pub fn command_capability_matches(command: &PortalCommand, agent: &AgentView) -> bool {
@@ -196,6 +219,23 @@ mod tests {
             validate_command(&other),
             Err(CommandError::UnexpectedItemId)
         );
+    }
+
+    #[test]
+    fn slack_open_takes_only_a_conversation_and_ts_item_id() {
+        let mut command = command(ActionKind::SlackOpen);
+        command.agent_id = None;
+        assert_eq!(validate_command(&command), Err(CommandError::MissingItemId));
+        for bad in ["123", "c1-1.2", "C1-1", "C1-1.2.3", "C1-1.2 x", "-1.2"] {
+            command.item_id = Some(bad.into());
+            assert_eq!(
+                validate_command(&command),
+                Err(CommandError::MissingItemId),
+                "{bad}"
+            );
+        }
+        command.item_id = Some("CDEV1-1700000200.000300".into());
+        assert_eq!(validate_command(&command), Ok(()));
     }
 
     #[test]

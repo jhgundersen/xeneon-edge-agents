@@ -164,6 +164,10 @@ QtObject {
         return sendBuilt("desktop_app", "", "", store.sequence, appId)
     }
 
+    function openSlackItem(itemId) {
+        return sendBuilt("slack_open", "", "", store.sequence, "", itemId)
+    }
+
     function openBasecampItem(itemId) {
         return sendBuilt("basecamp_open", "", "", store.sequence, "", itemId)
     }

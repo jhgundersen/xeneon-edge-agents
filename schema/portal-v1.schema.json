@@ -27,6 +27,7 @@
         "spotify_next",
         "spotify_previous",
         "basecamp_open",
+        "slack_open",
         "voice_start",
         "voice_stop",
         "voice_cancel",
@@ -47,7 +48,62 @@
         "switchable": { "type": "boolean" }
       }
     },
-    "dashboard": { "enum": ["agents", "spotify", "basecamp"] },
+    "dashboard": { "enum": ["agents", "spotify", "basecamp", "slack"] },
+    "slackId": { "type": "string", "pattern": "^[A-Z0-9]{1,24}-[0-9]{1,12}\\.[0-9]{1,8}$" },
+    "slack": {
+      "type": "object",
+      "required": ["available"],
+      "properties": {
+        "available": { "type": "boolean" },
+        "channels": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "required": ["name", "available", "unread", "unread_capped", "messages"],
+            "properties": {
+              "name": { "type": "string", "maxLength": 48 },
+              "available": { "type": "boolean" },
+              "unread": { "type": "integer", "minimum": 0 },
+              "unread_capped": { "type": "boolean" },
+              "messages": {
+                "type": "array",
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "required": ["id", "author", "text", "at", "replies", "unread"],
+                  "properties": {
+                    "id": { "$ref": "#/$defs/slackId" },
+                    "author": { "type": "string", "maxLength": 48 },
+                    "text": { "type": "string", "maxLength": 500 },
+                    "at": { "type": "integer", "minimum": 0 },
+                    "replies": { "type": "integer", "minimum": 0 },
+                    "unread": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "notifications": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "required": ["id", "kind", "source", "author", "text", "at", "unread"],
+            "properties": {
+              "id": { "$ref": "#/$defs/slackId" },
+              "kind": { "enum": ["dm", "mention"] },
+              "source": { "type": "string", "maxLength": 49 },
+              "author": { "type": "string", "maxLength": 48 },
+              "text": { "type": "string", "maxLength": 500 },
+              "at": { "type": "integer", "minimum": 0 },
+              "unread": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
     "basecampId": { "type": "string", "pattern": "^[0-9]{1,20}$" },
     "basecamp": {
       "type": "object",
@@ -393,6 +449,7 @@
         },
         "spotify": { "$ref": "#/$defs/spotify" },
         "basecamp": { "$ref": "#/$defs/basecamp" },
+        "slack": { "$ref": "#/$defs/slack" },
         "desktop_apps": {
           "type": "array",
           "maxItems": 4,
@@ -452,7 +509,12 @@
         "action": { "$ref": "#/$defs/actionKind" },
         "capability_id": { "type": "string", "minLength": 1 },
         "app_id": { "type": "string", "pattern": "^[a-z0-9-]{1,32}$" },
-        "item_id": { "$ref": "#/$defs/basecampId" }
+        "item_id": {
+          "oneOf": [
+            { "$ref": "#/$defs/basecampId" },
+            { "$ref": "#/$defs/slackId" }
+          ]
+        }
       }
     }
   }

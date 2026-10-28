@@ -1,0 +1,31 @@
+# Slack app for the XENEON EDGE Slack dashboard. Create it at
+# https://api.slack.com/apps -> Create New App -> From a manifest, pick your
+# workspace, and paste this file. Then: Install to Workspace, and copy the
+# "User OAuth Token" (xoxp-...) into ~/.config/xeneon-edge-agents/slack.toml
+# as `token = "xoxp-..."` with mode 0600.
+#
+# Every scope is read-only. The dashboard reads the configured channels'
+# recent messages, your DMs' unread state, and your @-mentions; it never
+# posts, reacts, or marks anything as read.
+display_information:
+  name: XENEON EDGE
+  description: Read-only Slack dashboard for the XENEON EDGE command center.
+  background_color: "#1d1d1d"
+oauth_config:
+  scopes:
+    user:
+      - channels:history
+      - channels:read
+      - groups:history
+      - groups:read
+      - im:history
+      - im:read
+      - mpim:history
+      - mpim:read
+      - users:read
+      - search:read
+      - team:read
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

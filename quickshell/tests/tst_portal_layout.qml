@@ -23,6 +23,7 @@ TestCase {
         property var dashboards: ["agents"]
         property var spotify: ({"available": false})
         property var basecamp: ({"available": false})
+        property var slack: ({"available": false})
         property var sessions: []
         property var usage: ({"providers": []})
         property var micro: ({"connected": false, "charging": false})
@@ -63,6 +64,11 @@ TestCase {
         }
         property var spotifyCommands: []
         property var basecampOpens: []
+        property var slackOpens: []
+        function openSlackItem(itemId) {
+            slackOpens = slackOpens.concat([itemId])
+            return "so"
+        }
         function openBasecampItem(itemId) {
             basecampOpens = basecampOpens.concat([itemId])
             return "bo"
@@ -164,6 +170,8 @@ TestCase {
         mockBridge.spotifyCommands = []
         mockBridge.basecampOpens = []
         mockStore.basecamp = {"available": false}
+        mockStore.slack = {"available": false}
+        mockBridge.slackOpens = []
         mockStore.dashboards = ["agents"]
         mockStore.spotify = {"available": false}
         mockPreferences.dashboard = "agents"
@@ -449,6 +457,46 @@ TestCase {
         mockStore.basecamp = {"available": false}
         wait(0)
         verify(view.boards.length === 0)
+    }
+
+    function test_slackDashboardShowsChannelFeedAndOpensItemsById() {
+        mockStore.dashboards = ["agents", "slack"]
+        mockPreferences.dashboard = "slack"
+        var now = Math.floor(Date.now() / 1000)
+        mockStore.slack = {
+            "available": true,
+            "channels": [
+                {"name": "dev", "available": true, "unread": 1, "unread_capped": false,
+                 "messages": [
+                     {"id": "CDEV-1700000050.000100", "author": "Jon", "text": "older",
+                      "at": now - 600, "replies": 0, "unread": false},
+                     {"id": "CDEV-1700000200.000300", "author": "Kari",
+                      "text": "hi @Jon see docs", "at": now - 60, "replies": 3, "unread": true}
+                 ]},
+                {"name": "support", "available": false, "unread": 0,
+                 "unread_capped": false, "messages": []}
+            ],
+            "notifications": [
+                {"id": "D1-1700000300.000200", "kind": "dm", "source": "Kari",
+                 "author": "Kari", "text": "lunch?", "at": now - 120, "unread": 2}
+            ]
+        }
+        wait(0)
+        verify(findChild(portal, "dashboardTitle").text.indexOf("// SLACK") > 0)
+        compare(findChild(portal, "dashboardTab_slack").detail, "1 FOR YOU")
+        compare(findChild(portal, "slackInboxTitle").text, "SLACK  //  1 FOR YOU")
+        var feed = findChild(portal, "slackMessages")
+        compare(feed.count, 2)
+        var newest = findChild(portal, "slackMessage_1")
+        verify(newest !== null)
+        verify(newest.activate())
+        verify(findChild(portal, "slackNotification_0").activate())
+        compare(mockBridge.slackOpens, ["CDEV-1700000200.000300", "D1-1700000300.000200"])
+
+        var view = findChild(portal, "slackDashboard")
+        verify(findChild(portal, "slackChannelTab_1").activate())
+        compare(view.channelIndex, 1)
+        compare(view.messages.length, 0)
     }
 
     function test_priorityOrderKeepsTheFlatGrid() {

@@ -7,6 +7,7 @@ pub mod micro;
 pub mod model;
 pub mod protocol;
 pub mod runtime;
+pub mod slack;
 pub mod spotify;
 pub mod t3code;
 pub mod usage;
