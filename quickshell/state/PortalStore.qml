@@ -30,7 +30,7 @@ QtObject {
         "mode": "herdr",
         "switchable": false
     })
-    // Header shortcuts configured in the daemon's desktop.apps (0-4).
+    // Desktop apps the daemon may launch (desktop.apps, 0-4).
     property var desktopApps: []
     // Enabled dashboards in order; the daemon always lists at least one.
     property var dashboards: ["agents"]
@@ -379,7 +379,7 @@ QtObject {
         var sourceNotifications = Array.isArray(value.notifications)
             ? value.notifications
             : []
-        for (var n = 0; n < sourceNotifications.length && n < 8; n += 1) {
+        for (var n = 0; n < sourceNotifications.length && notifications.length < 8; n += 1) {
             var item = sourceNotifications[n] || {}
             var id = itemId(item.id)
             if (id === "")
@@ -404,7 +404,7 @@ QtObject {
                 var lane = sourceLanes[l] || {}
                 var cards = []
                 var sourceCards = Array.isArray(lane.cards) ? lane.cards : []
-                for (var c = 0; c < sourceCards.length && c < 12; c += 1) {
+                for (var c = 0; c < sourceCards.length && cards.length < 12; c += 1) {
                     var card = sourceCards[c] || {}
                     var cardId = itemId(card.id)
                     if (cardId === "")
@@ -464,14 +464,14 @@ QtObject {
             var channel = sourceChannels[c] || {}
             var messages = []
             var sourceMessages = Array.isArray(channel.messages) ? channel.messages : []
-            for (var m = 0; m < sourceMessages.length && m < 20; m += 1) {
+            for (var m = 0; m < sourceMessages.length && messages.length < 20; m += 1) {
                 var message = sourceMessages[m] || {}
                 var id = itemId(message.id)
                 if (id === "")
                     continue
                 var images = []
                 var sourceImages = Array.isArray(message.images) ? message.images : []
-                for (var i = 0; i < sourceImages.length && i < 2; i += 1) {
+                for (var i = 0; i < sourceImages.length && images.length < 2; i += 1) {
                     var image = sourceImages[i] || {}
                     var file = safeString(image.file, "", 40)
                     var width = count(image.width)
@@ -485,7 +485,7 @@ QtObject {
                 var sourceReactions = Array.isArray(message.reactions)
                     ? message.reactions
                     : []
-                for (var r = 0; r < sourceReactions.length && r < 8; r += 1) {
+                for (var r = 0; r < sourceReactions.length && reactions.length < 8; r += 1) {
                     var reaction = sourceReactions[r] || {}
                     var emoji = safeString(reaction.emoji, "", 34).trim()
                     var times = count(reaction.count)
@@ -515,7 +515,7 @@ QtObject {
         var sourceNotifications = Array.isArray(value.notifications)
             ? value.notifications
             : []
-        for (var n = 0; n < sourceNotifications.length && n < 10; n += 1) {
+        for (var n = 0; n < sourceNotifications.length && notifications.length < 10; n += 1) {
             var item = sourceNotifications[n] || {}
             var notificationId = itemId(item.id)
             if (notificationId === "")
@@ -551,7 +551,7 @@ QtObject {
         }
         var pulls = []
         var sourcePulls = Array.isArray(value.pull_requests) ? value.pull_requests : []
-        for (var p = 0; p < sourcePulls.length && p < 30; p += 1) {
+        for (var p = 0; p < sourcePulls.length && pulls.length < 30; p += 1) {
             var pull = sourcePulls[p] || {}
             var pullId = itemId(pull.id)
             if (pullId === "" || pullId[0] !== "p")
@@ -572,7 +572,7 @@ QtObject {
         var sourceNotifications = Array.isArray(value.notifications)
             ? value.notifications
             : []
-        for (var n = 0; n < sourceNotifications.length && n < 12; n += 1) {
+        for (var n = 0; n < sourceNotifications.length && notifications.length < 12; n += 1) {
             var item = sourceNotifications[n] || {}
             var notificationId = itemId(item.id)
             if (notificationId === "" || notificationId[0] !== "n")

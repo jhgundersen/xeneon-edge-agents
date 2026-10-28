@@ -211,6 +211,7 @@
               "done": { "type": "integer", "minimum": 0 },
               "lanes": {
                 "type": "array",
+                "maxItems": 8,
                 "items": {
                   "type": "object",
                   "required": ["title", "color", "total", "cards"],
@@ -256,7 +257,7 @@
         "title": { "type": "string", "maxLength": 160 },
         "artist": { "type": "string", "maxLength": 160 },
         "album": { "type": "string", "maxLength": 160 },
-        "art_url": { "type": "string", "pattern": "^https://i\\.scdn\\.co/image/" },
+        "art_url": { "type": "string", "maxLength": 256, "pattern": "^https://i\\.scdn\\.co/image/" },
         "length_ms": { "type": "integer", "minimum": 0 },
         "position_ms": { "type": "integer", "minimum": 0 },
         "can_control": { "type": "boolean" },

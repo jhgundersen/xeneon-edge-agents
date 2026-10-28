@@ -581,10 +581,16 @@ Item {
                     required property var modelData
 
                     objectName: "dashboardTab_" + modelData
-                    width: root.dashboards.length > 5 ? 120 : 140
+                    width: 140
                     height: 48
                     label: String(modelData).toUpperCase()
                     detail: root.dashboardDetail(modelData)
+                    hint: modelData === "agents" && root.agentOrderAvailable
+                        ? (root.agentsDashboard
+                            ? "Tap again for " + (root.agentOrderMode === "priority"
+                                ? "grouped" : "priority") + " ordering"
+                            : "Opens in priority ordering")
+                        : ""
                     selected: root.currentDashboard === modelData
                     accent: root.dashboardAccent(modelData)
                     theme: root.theme
@@ -1355,6 +1361,7 @@ Item {
         reducedMotion: root.effectiveReducedMotion
         canOpenSpotify: root.desktopAppConfigured("spotify")
         enabled: root.controlCenterInteractive
+            && !root.store.freshSnapshotRequired
         onInteracted: root.activity.noteUserActivity()
         onPlayPauseRequested: root.bridge.spotifyPlayPause()
         onNextRequested: root.bridge.spotifyNext()

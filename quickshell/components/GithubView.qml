@@ -35,8 +35,19 @@ Item {
         4.5
     )
 
+    // Relative times and "today" follow the clock, not only new snapshots.
+    property double nowMs: Date.now()
+
+    Timer {
+        interval: 60000
+        repeat: true
+        running: root.visible
+        triggeredOnStart: true
+        onTriggered: root.nowMs = Date.now()
+    }
+
     function ago(seconds) {
-        var minutes = Math.max(0, Math.floor((Date.now() / 1000 - Number(seconds)) / 60))
+        var minutes = Math.max(0, Math.floor((root.nowMs / 1000 - Number(seconds)) / 60))
         if (minutes < 60)
             return minutes + "M"
         if (minutes < 60 * 24)
@@ -137,6 +148,16 @@ Item {
             spacing: 4
             model: root.pullRequests
             boundsBehavior: Flickable.StopAtBounds
+
+            // A refresh replaces the model, which would jump back to the top.
+            property real keptOffset: 0
+            onMovementEnded: keptOffset = contentY - originY
+            onModelChanged: Qt.callLater(function() {
+                feed.contentY = feed.originY + Math.min(
+                    feed.keptOffset,
+                    Math.max(0, feed.contentHeight - feed.height)
+                )
+            })
 
             delegate: Rectangle {
                 id: pull

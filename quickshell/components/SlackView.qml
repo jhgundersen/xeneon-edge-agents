@@ -43,9 +43,20 @@ Item {
         4.5
     )
 
+    // Relative times and "today" follow the clock, not only new snapshots.
+    property double nowMs: Date.now()
+
+    Timer {
+        interval: 60000
+        repeat: true
+        running: root.visible
+        triggeredOnStart: true
+        onTriggered: root.nowMs = Date.now()
+    }
+
     function clock(seconds) {
         var at = new Date(Number(seconds) * 1000)
-        var today = new Date()
+        var today = new Date(root.nowMs)
         var time = Qt.formatTime(at, "HH:mm")
         return at.toDateString() === today.toDateString()
             ? time
@@ -53,7 +64,7 @@ Item {
     }
 
     function ago(seconds) {
-        var minutes = Math.max(0, Math.floor((Date.now() / 1000 - Number(seconds)) / 60))
+        var minutes = Math.max(0, Math.floor((root.nowMs / 1000 - Number(seconds)) / 60))
         if (minutes < 60)
             return minutes + "M"
         if (minutes < 60 * 24)
@@ -85,7 +96,8 @@ Item {
 
                 required property var modelData
                 required property int index
-                readonly property bool selected: index === root.channelIndex
+                readonly property bool selected:
+                    index === Math.min(root.channelIndex, root.channels.length - 1)
 
                 objectName: "slackChannelTab_" + index
                 anchors.verticalCenter: parent.verticalCenter
@@ -163,8 +175,24 @@ Item {
             spacing: 10
             model: root.messages
             boundsBehavior: Flickable.StopAtBounds
-            // Newest at the bottom, like Slack; stay there as messages arrive.
-            onCountChanged: positionViewAtEnd()
+            // Newest at the bottom, like Slack. A refresh replaces the model,
+            // which would reset the view: follow new messages only when the
+            // reader was already at the bottom, otherwise keep their place.
+            property bool followEnd: true
+            property real keptOffset: 0
+            onMovementEnded: {
+                followEnd = atYEnd
+                keptOffset = contentY - originY
+            }
+            onModelChanged: Qt.callLater(function() {
+                if (feed.followEnd)
+                    feed.positionViewAtEnd()
+                else
+                    feed.contentY = feed.originY + Math.min(
+                        feed.keptOffset,
+                        Math.max(0, feed.contentHeight - feed.height)
+                    )
+            })
             Component.onCompleted: positionViewAtEnd()
 
             delegate: Rectangle {

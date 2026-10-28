@@ -45,11 +45,22 @@ Item {
         return ThemePalette.ensureContrast(String(color), String(background), 4.5)
     }
 
+    // Relative times and "today" follow the clock, not only new snapshots.
+    property double nowMs: Date.now()
+
+    Timer {
+        interval: 60000
+        repeat: true
+        running: root.visible
+        triggeredOnStart: true
+        onTriggered: root.nowMs = Date.now()
+    }
+
     function ago(iso) {
         var at = Date.parse(String(iso || ""))
         if (!isFinite(at))
             return ""
-        var minutes = Math.max(0, Math.floor((Date.now() - at) / 60000))
+        var minutes = Math.max(0, Math.floor((root.nowMs - at) / 60000))
         if (minutes < 60)
             return minutes + "M"
         if (minutes < 60 * 24)
@@ -130,7 +141,8 @@ Item {
                 Rectangle {
                     required property var modelData
                     required property int index
-                    readonly property bool selected: index === root.boardIndex
+                    readonly property bool selected:
+                        index === Math.min(root.boardIndex, root.boards.length - 1)
 
                     objectName: "basecampBoardTab_" + index
                     width: tabText.implicitWidth + 32

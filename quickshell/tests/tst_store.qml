@@ -119,15 +119,18 @@ TestCase {
                         {"file": "FIMG1.png", "width": 480, "height": 135},
                         {"file": "../../etc/passwd", "width": 1, "height": 1},
                         {"file": "https://files.slack.com/x.png", "width": 1, "height": 1},
-                        {"file": "FIMG2.png", "width": 0, "height": 10}
+                        {"file": "FIMG2.png", "width": 0, "height": 10},
+                        {"file": "FIMG3.jpg", "width": 360, "height": 200}
                     ]
                 }]
             }],
             "notifications": []
         })
         var images = normalized.channels[0].messages[0].images
-        compare(images.length, 1)
+        // Rejected entries do not use up the two image slots.
+        compare(images.length, 2)
         compare(images[0].file, "FIMG1.png")
+        compare(images[1].file, "FIMG3.jpg")
         var reactions = normalized.channels[0].messages[0].reactions
         compare(reactions.length, 1)
         compare(reactions[0].emoji, "👍")

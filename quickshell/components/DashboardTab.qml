@@ -7,6 +7,8 @@ Rectangle {
 
     property string label: ""
     property string detail: ""
+    // Extra spoken guidance, e.g. what a repeated tap does.
+    property string hint: ""
     property bool selected: false
     property var theme: ThemePalette.fallback
     property color accent: theme.accent
@@ -32,9 +34,10 @@ Rectangle {
     }
 
     Accessible.role: Accessible.Button
-    Accessible.ignored: !root.enabled
+    Accessible.ignored: false
     Accessible.name: label + " dashboard"
-    Accessible.description: selected ? "Showing. " + detail : detail
+    Accessible.description: (selected ? "Showing. " : "") + detail
+        + (hint !== "" ? ". " + hint : "")
     Accessible.onPressAction: root.activate()
 
     Column {
