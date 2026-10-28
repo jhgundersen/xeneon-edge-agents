@@ -143,12 +143,13 @@ class QmlSafetyContractTests(unittest.TestCase):
         self.assertEqual(card.count("MultiEffect {"), 1)
         self.assertIn('objectName: "cardAccentBloom"', card)
         self.assertNotIn("activitySweep", card)
-        self.assertIn('objectName: "cardWorkingBreath"', card)
+        self.assertNotIn("breath", card)
+        self.assertIn('objectName: "cardWorkingTrack"', card)
         self.assertEqual(card.count("blurEnabled: true"), 1)
         self.assertIn("blurMax: 42", card)
         self.assertEqual(card.count("visible: false"), 1)
         self.assertNotIn("Gradient", card)
-        self.assertIn('running: root.working && !root.reducedMotion', card)
+        self.assertIn("running: workingTrack.visible && !root.reducedMotion", card)
         self.assertNotIn("Canvas", card)
 
     def test_hold_controls_are_800ms_and_drag_cancellable(self):

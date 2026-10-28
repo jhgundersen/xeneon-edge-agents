@@ -28,27 +28,6 @@ Item {
 
     readonly property string agentState: Palette.effectiveAgentState(agent)
     readonly property bool working: agent !== null && agentState === "working"
-    // Working cards breathe slowly instead of carrying a moving sweep:
-    // 0 at rest, 1 at the top of each breath. Reduced motion holds midway.
-    property real breath: 0.5
-
-    SequentialAnimation on breath {
-        loops: Animation.Infinite
-        running: root.working && !root.reducedMotion
-        NumberAnimation {
-            from: 0
-            to: 1
-            duration: 1400
-            easing.type: Easing.InOutSine
-        }
-        NumberAnimation {
-            from: 1
-            to: 0
-            duration: 1400
-            easing.type: Easing.InOutSine
-        }
-        onRunningChanged: if (!running) root.breath = 0.5
-    }
     readonly property color accent: Palette.agentColor(agent, theme)
     readonly property color cardBackground:
         focusHandler.pressed || guardedFocusHandler.pressed
@@ -207,18 +186,57 @@ Item {
         border.width: root.agent !== null && root.agent.focused ? 2 : 1
         border.color: Qt.alpha(
             root.accent,
-            root.agent !== null && root.agent.focused
-                ? 0.95
-                : root.working ? 0.4 + 0.5 * root.breath : 0.58
+            root.agent !== null && root.agent.focused ? 0.95 : 0.58
         )
     }
 
-    Rectangle {
-        objectName: "cardWorkingBreath"
-        anchors.fill: parent
-        radius: 18
+    // Working: a short segment glides along a faint track at the card's
+    // bottom edge. It animates position, not color, so it stays smooth.
+    Item {
+        id: workingTrack
+
+        objectName: "cardWorkingTrack"
+        anchors {
+            left: parent.left
+            right: parent.right
+            bottom: parent.bottom
+            leftMargin: 24
+            rightMargin: 24
+            bottomMargin: 6
+        }
+        height: 3
+        clip: true
         visible: root.working
-        color: Qt.alpha(root.accent, 0.025 + 0.06 * root.breath)
+
+        Rectangle {
+            anchors.fill: parent
+            radius: height / 2
+            color: Qt.alpha(root.accent, 0.16)
+        }
+
+        Rectangle {
+            id: workingGlider
+
+            objectName: "cardWorkingGlider"
+            width: Math.max(24, workingTrack.width * 0.22)
+            height: parent.height
+            radius: height / 2
+            color: root.accent
+            x: (workingTrack.width - width) / 2
+
+            NumberAnimation on x {
+                running: workingTrack.visible && !root.reducedMotion
+                from: -workingGlider.width
+                to: workingTrack.width
+                duration: 2200
+                loops: Animation.Infinite
+                easing.type: Easing.InOutQuad
+                onRunningChanged: if (!running)
+                    workingGlider.x = Qt.binding(function() {
+                        return (workingTrack.width - workingGlider.width) / 2
+                    })
+            }
+        }
     }
 
     Rectangle {

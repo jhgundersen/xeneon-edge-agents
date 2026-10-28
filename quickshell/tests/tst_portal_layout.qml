@@ -238,6 +238,22 @@ TestCase {
         compare(portal.lanePage(1).lanes[0].label, "space-2")
     }
 
+    function test_workingCardsShowABottomTrackThatHoldsStillWhenReduced() {
+        mockStore.agentOrder = {"available": true, "mode": "priority"}
+        mockStore.agents = agents(2)
+        wait(0)
+        // agent(0) is working, agent(1) is idle; reducedMotion is on here.
+        var workingCard = findChild(portal, "agentCard_0_0")
+        var idleCard = findChild(portal, "agentCard_0_1")
+        verify(workingCard.working)
+        verify(!idleCard.working)
+        var track = findChild(workingCard, "cardWorkingTrack")
+        var glider = findChild(workingCard, "cardWorkingGlider")
+        verify(track !== null && glider !== null)
+        verify(track.y + track.height <= workingCard.height)
+        compare(glider.x, (track.width - glider.width) / 2)
+    }
+
     function test_priorityOrderKeepsTheFlatGrid() {
         mockStore.agents = workspaceAgents([2, 1, 3])
         mockStore.agentOrder = {"available": true, "mode": "priority"}
