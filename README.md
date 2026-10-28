@@ -120,8 +120,10 @@ reused cache-read context is excluded) in the
 read-only SQLite message ledger. The AI footer shows both reported usage
 windows, resets, plan/freshness state, and bounded today/hour token activity
 when available.
-Header controls use typed daemon actions to focus or launch the fixed ChatGPT
-Desktop and Claude Desktop entries. The Micro control opens a read-only virtual
+Header controls use typed daemon actions to focus or launch the fixed Spotify
+and Discord (Omarchy web app) entries.
+In Grouped order the cards are drawn as one lane per Herdr workspace, with the
+workspace name above each lane; Priority order keeps the flat attention grid. The Micro control opens a read-only virtual
 projection of the connected device and current agent slots.
 The Order control reads and writes Herdr's own grouped/priority setting, so the
 Herdr Agents panel and EDGE cards stay synchronized instead of keeping separate

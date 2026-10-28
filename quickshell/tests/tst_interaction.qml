@@ -77,21 +77,21 @@ TestCase {
     }
 
     DesktopAppButton {
-        id: chatGptButton
+        id: spotifyButton
         x: 0
         y: 260
         width: 180
         height: 52
-        label: "CHATGPT"
+        label: "SPOTIFY"
     }
 
     DesktopAppButton {
-        id: claudeButton
+        id: discordButton
         x: 0
         y: 312
         width: 180
         height: 48
-        label: "CLAUDE"
+        label: "DISCORD"
     }
 
     SignalSpy {
@@ -101,14 +101,14 @@ TestCase {
     }
 
     SignalSpy {
-        id: chatGptSpy
-        target: chatGptButton
+        id: spotifySpy
+        target: spotifyButton
         signalName: "triggered"
     }
 
     SignalSpy {
-        id: claudeSpy
-        target: claudeButton
+        id: discordSpy
+        target: discordButton
         signalName: "triggered"
     }
 
@@ -150,12 +150,12 @@ TestCase {
         voiceCancelSpy.clear()
         hostileCard.enabled = true
         agentFocusSpy.clear()
-        chatGptButton.enabled = true
-        chatGptButton.pending = false
-        claudeButton.enabled = true
-        claudeButton.pending = false
-        chatGptSpy.clear()
-        claudeSpy.clear()
+        spotifyButton.enabled = true
+        spotifyButton.pending = false
+        discordButton.enabled = true
+        discordButton.pending = false
+        spotifySpy.clear()
+        discordSpy.clear()
     }
 
     function test_guardedHoldEmitsPinnedIdentityAndSequence() {
@@ -249,19 +249,19 @@ TestCase {
     }
 
     function test_desktopAppButtonsEmitOnceAndRespectPendingState() {
-        verify(chatGptButton.activate())
-        compare(chatGptSpy.count, 1)
-        compare(claudeSpy.count, 0)
+        verify(spotifyButton.activate())
+        compare(spotifySpy.count, 1)
+        compare(discordSpy.count, 0)
 
-        chatGptButton.pending = true
-        verify(!chatGptButton.activate())
-        compare(chatGptSpy.count, 1)
+        spotifyButton.pending = true
+        verify(!spotifyButton.activate())
+        compare(spotifySpy.count, 1)
 
-        verify(claudeButton.activate())
-        compare(claudeSpy.count, 1)
-        claudeButton.enabled = false
-        verify(!claudeButton.activate())
-        compare(claudeSpy.count, 1)
+        verify(discordButton.activate())
+        compare(discordSpy.count, 1)
+        discordButton.enabled = false
+        verify(!discordButton.activate())
+        compare(discordSpy.count, 1)
     }
 
     function test_disabledAccessibleActionsCannotReachHiddenControls() {

@@ -152,13 +152,15 @@ The only actions are:
   by this daemon instance.
 - `voice_cancel`: takes no agent or capability and discards only a recording
   owned by this daemon instance.
-- `chatgpt_desktop`: takes no agent or capability and focuses the single exact
-  ChatGPT Desktop compositor client, or launches its fixed desktop entry when
-  none exists.
-- `claude_desktop`: takes no agent or capability and applies the same
-  focus-or-launch policy to the fixed Claude Desktop identity.
+- `spotify_desktop`: takes no agent or capability and focuses the single exact
+  Spotify compositor client, or launches its fixed desktop entry when none
+  exists.
+- `discord_desktop`: takes no agent or capability and applies the same
+  focus-or-launch policy to the fixed Discord web-app identity.
 - `order_grouped` and `order_priority`: take no agent or capability and apply
-  one typed, idempotent ordering value through Herdr's public API. The daemon
+  one typed, idempotent ordering value through Herdr's public API. Stock
+  Herdr protocol 22 has no ordering API, so for an all-stock roster the daemon
+  owns the value and persists it like T3 Code's. Otherwise the daemon
   polls the same authoritative Herdr setting, so changes made in either UI
   converge without a portal-owned preference. In T3 Code mode the same
   commands set a daemon-owned preference because T3 Code has no ordering API.

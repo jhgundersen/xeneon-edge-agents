@@ -17,10 +17,16 @@ Item {
     property string hostName: "LOCAL"
 
     readonly property int pageSize: 14
-    readonly property int pageCount: Math.max(
-        1,
-        Math.ceil(store.agents.length / pageSize)
-    )
+    // Grouped ordering renders one lane per workspace. Lanes keep the grid's
+    // two-row card size and pack whole lanes onto pages of the same width.
+    readonly property bool laneLayout:
+        agentOrderAvailable && agentOrderMode === "grouped"
+    readonly property int laneRows: 2
+    readonly property int lanePageColumns: pageSize / laneRows
+    readonly property var lanePages: buildLanePages(store.agents)
+    readonly property int pageCount: laneLayout
+        ? Math.max(1, lanePages.length)
+        : Math.max(1, Math.ceil(store.agents.length / pageSize))
     readonly property string surfaceState: store.surfaceState()
     readonly property color microStatusColor: store.micro.connected
         ? theme.success
@@ -131,6 +137,54 @@ Item {
         )
     }
 
+    // Agents arrive in the manager's workspace order, so consecutive agents
+    // sharing a session and workspace form one lane. A lane too large for a
+    // page continues as another lane with the same label.
+    function buildLanePages(agents) {
+        var laneCapacity = lanePageColumns * laneRows
+        var lanes = []
+        for (var index = 0; index < agents.length; index += 1) {
+            var agent = agents[index]
+            var workspace = String(agent.workspace || "").trim()
+            var key = String(agent.session || "") + "\u0000" + workspace
+            var lane = lanes.length > 0 ? lanes[lanes.length - 1] : null
+            if (lane === null || lane.key !== key
+                    || lane.agents.length >= laneCapacity) {
+                lane = {
+                    "key": key,
+                    "label": workspace !== "" ? workspace : "Workspace",
+                    "agents": []
+                }
+                lanes.push(lane)
+            }
+            lane.agents.push(agent)
+        }
+        var pages = []
+        var page = null
+        for (var laneIndex = 0; laneIndex < lanes.length; laneIndex += 1) {
+            var packed = lanes[laneIndex]
+            packed.columns = Math.ceil(packed.agents.length / laneRows)
+            if (page === null
+                    || page.columns + packed.columns > lanePageColumns) {
+                page = { "columns": 0, "rows": 1, "lanes": [] }
+                pages.push(page)
+            }
+            page.lanes.push(packed)
+            page.columns += packed.columns
+            page.rows = Math.max(
+                page.rows,
+                Math.min(packed.agents.length, laneRows)
+            )
+        }
+        return pages
+    }
+
+    function lanePage(pageIndex) {
+        return pageIndex >= 0 && pageIndex < lanePages.length
+            ? lanePages[pageIndex]
+            : { "columns": 1, "rows": 1, "lanes": [] }
+    }
+
     function attentionSummary() {
         var working = 0
         var review = 0
@@ -191,9 +245,9 @@ Item {
     function requestDesktop(action) {
         if (desktopActionPending(action))
             return false
-        var requestId = action === "chatgpt_desktop"
-            ? bridge.openChatGptDesktop()
-            : bridge.openClaudeDesktop()
+        var requestId = action === "spotify_desktop"
+            ? bridge.openSpotifyDesktop()
+            : bridge.openDiscordDesktop()
         if (requestId === "")
             return false
         var pending = Object.assign({}, pendingDesktopActions)
@@ -587,31 +641,31 @@ Item {
             }
 
             DesktopAppButton {
-                objectName: "chatGptDesktopButton"
+                objectName: "spotifyDesktopButton"
                 width: 132
                 height: 48
-                label: "CHATGPT"
+                label: "SPOTIFY"
                 accent: root.theme.green
                 theme: root.theme
-                pending: root.desktopActionPending("chatgpt_desktop")
+                pending: root.desktopActionPending("spotify_desktop")
                 enabled: root.controlCenterInteractive
                     && !root.store.freshSnapshotRequired
                 onInteracted: root.activity.noteUserActivity()
-                onTriggered: root.requestDesktop("chatgpt_desktop")
+                onTriggered: root.requestDesktop("spotify_desktop")
             }
 
             DesktopAppButton {
-                objectName: "claudeDesktopButton"
+                objectName: "discordDesktopButton"
                 width: 132
                 height: 48
-                label: "CLAUDE"
-                accent: root.theme.orange
+                label: "DISCORD"
+                accent: root.theme.blue
                 theme: root.theme
-                pending: root.desktopActionPending("claude_desktop")
+                pending: root.desktopActionPending("discord_desktop")
                 enabled: root.controlCenterInteractive
                     && !root.store.freshSnapshotRequired
                 onInteracted: root.activity.noteUserActivity()
-                onTriggered: root.requestDesktop("claude_desktop")
+                onTriggered: root.requestDesktop("discord_desktop")
             }
         }
 
@@ -904,11 +958,12 @@ Item {
                 columns: root.pageColumns(page.index)
                 columnSpacing: 16
                 rowSpacing: 16
+                visible: !root.laneLayout
 
                 Repeater {
-                    model: root.pageSize
+                    model: root.laneLayout ? 0 : root.pageSize
 
-                    AgentCard {
+                    PortalAgentCard {
                         required property int index
                         objectName: "agentCard_" + page.index + "_" + index
 
@@ -923,50 +978,121 @@ Item {
                                     * (root.pageRows(page.index) - 1)
                         ) / root.pageRows(page.index)
                         agent: root.agentAt(page.index, index)
-                        theme: root.theme
-                        visible: agent !== null
-                        enabled: visible && root.controlCenterInteractive
-                        reducedMotion: root.effectiveReducedMotion
-                        snapshotSequence: root.store.sequence
-                        actionsEnabled: !root.store.freshSnapshotRequired
-                        managerName: root.managerName
+                    }
+                }
+            }
 
-                        onInteracted: root.activity.noteUserActivity()
+            Row {
+                id: laneRow
+                objectName: "agentLanes_" + page.index
 
-                        onFocusRequested: function(agentId) {
-                            // Card activation intentionally focuses the
-                            // active agent manager's window.
-                            root.bridge.openAgent(agentId)
+                readonly property var layout: root.lanePage(page.index)
+                // One card column; a lane spans its own number of columns.
+                readonly property real unitWidth: (
+                    width - spacing * (layout.columns - 1)
+                ) / Math.max(1, layout.columns)
+
+                anchors {
+                    fill: parent
+                    leftMargin: 34
+                    rightMargin: 34
+                    topMargin: 8
+                    bottomMargin: 4
+                }
+                spacing: 16
+                visible: root.laneLayout
+
+                Repeater {
+                    model: root.laneLayout ? laneRow.layout.lanes.length : 0
+
+                    Column {
+                        id: lane
+
+                        required property int index
+                        readonly property var laneData:
+                            laneRow.layout.lanes[index]
+
+                        objectName: "agentLane_" + page.index + "_" + index
+                        width: laneRow.unitWidth * laneData.columns
+                            + laneRow.spacing * (laneData.columns - 1)
+                        height: laneRow.height
+                        spacing: 8
+
+                        Text {
+                            id: laneLabel
+                            objectName: "agentLaneLabel_" + page.index
+                                + "_" + lane.index
+                            width: parent.width
+                            text: lane.laneData.label.toUpperCase()
+                                + "  //  " + lane.laneData.agents.length
+                            textFormat: Text.PlainText
+                            color: root.theme.textMuted
+                            elide: Text.ElideRight
+                            font {
+                                family: "monospace"
+                                pixelSize: 12
+                                weight: Font.DemiBold
+                                letterSpacing: 0.7
+                            }
                         }
 
-                        onApproveRequested: function(
-                            agentId,
-                            capabilityId,
-                            sequence
-                        ) {
-                            root.bridge.approveAgent(
-                                agentId,
-                                capabilityId,
-                                sequence
-                            )
-                            root.bridge.restoreFocus(sequence)
-                        }
+                        Grid {
+                            id: laneGrid
 
-                        onInterruptRequested: function(
-                            agentId,
-                            capabilityId,
-                            sequence
-                        ) {
-                            root.bridge.interruptAgent(
-                                agentId,
-                                capabilityId,
-                                sequence
-                            )
-                            root.bridge.restoreFocus(sequence)
+                            readonly property real cardHeight: (
+                                lane.height - laneLabel.height - lane.spacing
+                                    - rowSpacing * (laneRow.layout.rows - 1)
+                            ) / laneRow.layout.rows
+
+                            columns: lane.laneData.columns
+                            columnSpacing: laneRow.spacing
+                            rowSpacing: 16
+
+                            Repeater {
+                                model: lane.laneData.agents.length
+
+                                PortalAgentCard {
+                                    required property int index
+                                    objectName: "laneCard_" + page.index
+                                        + "_" + lane.index + "_" + index
+
+                                    width: laneRow.unitWidth
+                                    height: laneGrid.cardHeight
+                                    agent: lane.laneData.agents[index]
+                                }
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+
+    component PortalAgentCard: AgentCard {
+        theme: root.theme
+        visible: agent !== null
+        enabled: visible && root.controlCenterInteractive
+        reducedMotion: root.effectiveReducedMotion
+        snapshotSequence: root.store.sequence
+        actionsEnabled: !root.store.freshSnapshotRequired
+        managerName: root.managerName
+
+        onInteracted: root.activity.noteUserActivity()
+
+        onFocusRequested: function(agentId) {
+            // Card activation intentionally focuses the active agent
+            // manager's window.
+            root.bridge.openAgent(agentId)
+        }
+
+        onApproveRequested: function(agentId, capabilityId, sequence) {
+            root.bridge.approveAgent(agentId, capabilityId, sequence)
+            root.bridge.restoreFocus(sequence)
+        }
+
+        onInterruptRequested: function(agentId, capabilityId, sequence) {
+            root.bridge.interruptAgent(agentId, capabilityId, sequence)
+            root.bridge.restoreFocus(sequence)
         }
     }
 
@@ -1211,8 +1337,8 @@ Item {
                 }
                 return
             }
-            if (result.action === "chatgpt_desktop"
-                    || result.action === "claude_desktop") {
+            if (result.action === "spotify_desktop"
+                    || result.action === "discord_desktop") {
                 var desktopPending = Object.assign(
                     {},
                     root.pendingDesktopActions

@@ -9,8 +9,8 @@ QtObject {
         "approve",
         "interrupt",
         "restore_focus",
-        "chatgpt_desktop",
-        "claude_desktop",
+        "spotify_desktop",
+        "discord_desktop",
         "voice_start",
         "voice_stop",
         "voice_cancel",
@@ -46,8 +46,8 @@ QtObject {
         }
 
         var systemAction = action === "restore_focus"
-            || action === "chatgpt_desktop"
-            || action === "claude_desktop"
+            || action === "spotify_desktop"
+            || action === "discord_desktop"
             || action === "voice_start"
             || action === "voice_stop"
             || action === "voice_cancel"

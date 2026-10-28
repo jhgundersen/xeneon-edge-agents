@@ -86,8 +86,8 @@ TestCase {
     function test_desktopActionsAreFixedAndCannotTargetAgents() {
         for (var index = 0; index < 2; index += 1) {
             var action = [
-                "chatgpt_desktop",
-                "claude_desktop"
+                "spotify_desktop",
+                "discord_desktop"
             ][index]
             var command = builder.build(action, "", "", 45)
             verify(command !== null)

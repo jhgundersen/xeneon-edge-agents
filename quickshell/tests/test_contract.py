@@ -90,8 +90,8 @@ class QmlSafetyContractTests(unittest.TestCase):
             "approve",
             "interrupt",
             "restore_focus",
-            "chatgpt_desktop",
-            "claude_desktop",
+            "spotify_desktop",
+            "discord_desktop",
             "voice_start",
             "voice_stop",
             "voice_cancel",
@@ -390,8 +390,8 @@ class QmlSafetyContractTests(unittest.TestCase):
 
         self.assertIn("normalizeUsage", store)
         self.assertIn("normalizeMicro", store)
-        self.assertIn('sendBuilt("chatgpt_desktop"', bridge)
-        self.assertIn('sendBuilt("claude_desktop"', bridge)
+        self.assertIn('sendBuilt("spotify_desktop"', bridge)
+        self.assertIn('sendBuilt("discord_desktop"', bridge)
         self.assertIn("AiUsageDock", portal)
         self.assertIn("agents: root.store.agents", portal)
         self.assertIn("sessions: root.store.sessions", portal)

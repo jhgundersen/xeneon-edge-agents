@@ -28,8 +28,8 @@ pub fn validate_command(command: &PortalCommand) -> Result<(), CommandError> {
 
     match command.action {
         ActionKind::RestoreFocus
-        | ActionKind::ChatgptDesktop
-        | ActionKind::ClaudeDesktop
+        | ActionKind::SpotifyDesktop
+        | ActionKind::DiscordDesktop
         | ActionKind::VoiceStart
         | ActionKind::VoiceStop
         | ActionKind::VoiceCancel
@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn desktop_actions_are_typed_global_actions() {
-        for action in [ActionKind::ChatgptDesktop, ActionKind::ClaudeDesktop] {
+        for action in [ActionKind::SpotifyDesktop, ActionKind::DiscordDesktop] {
             let mut command = command(action);
             assert_eq!(
                 validate_command(&command),

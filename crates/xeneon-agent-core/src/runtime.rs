@@ -79,6 +79,8 @@ impl AgentTarget {
 struct PersistedBackend {
     backend: AgentBackend,
     t3code_order: AgentOrderMode,
+    /// Used only when every Herdr session lacks its own ordering API.
+    herdr_order: AgentOrderMode,
 }
 
 fn load_persisted_backend(path: &Path) -> Option<PersistedBackend> {
@@ -130,6 +132,8 @@ struct RuntimeState {
     snapshot: PortalSnapshot,
     backend: AgentBackend,
     t3code_order: AgentOrderMode,
+    herdr_order: AgentOrderMode,
+    herdr_order_daemon_owned: bool,
     t3code_sequence: Option<u64>,
     targets: HashMap<String, AgentTarget>,
     observed: HashMap<String, ObservedAgent>,
@@ -188,6 +192,7 @@ impl DaemonRuntime {
             .unwrap_or(PersistedBackend {
                 backend: config.agent_backend,
                 t3code_order: AgentOrderMode::default(),
+                herdr_order: AgentOrderMode::default(),
             });
         snapshot.backend = AgentBackendSnapshot {
             mode: persisted.backend,
@@ -209,6 +214,8 @@ impl DaemonRuntime {
                     snapshot,
                     backend: persisted.backend,
                     t3code_order: persisted.t3code_order,
+                    herdr_order: persisted.herdr_order,
+                    herdr_order_daemon_owned: false,
                     t3code_sequence: None,
                     targets: HashMap::new(),
                     observed: HashMap::new(),
@@ -508,6 +515,7 @@ impl DaemonRuntime {
                     agent.actions = AgentActions::default();
                 }
                 state.snapshot.agent_order = AgentOrderSnapshot::default();
+                state.herdr_order_daemon_owned = false;
                 sort_agents(&mut state.snapshot.agents);
                 state.targets.clear();
                 state.snapshot.sequence = state.snapshot.sequence.saturating_add(1);
@@ -525,6 +533,7 @@ impl DaemonRuntime {
         let mut targets = HashMap::new();
         let mut connected = 0usize;
         let mut order_modes = Vec::new();
+        let mut daemon_owned_order_sessions = 0usize;
         let mut source_offset = 0usize;
         let mut active_names = Vec::new();
 
@@ -634,6 +643,9 @@ impl DaemonRuntime {
                     if let Some(mode) = observation.agent_order {
                         order_modes.push(mode);
                     }
+                    if observation.daemon_owned_order {
+                        daemon_owned_order_sessions += 1;
+                    }
                     source_offset += observation.agents.len();
                     sessions.push(observation.session);
                     targets.extend(
@@ -690,8 +702,11 @@ impl DaemonRuntime {
             ..
         } = &mut *state;
         apply_agent_observations(&mut agents, &targets, observed, focused_agents, now);
-        let agent_order = if !descriptors.is_empty()
-            && connected == descriptors.len()
+        let all_connected = !descriptors.is_empty() && connected == descriptors.len();
+        // A mixed roster keeps ordering unavailable: the daemon cannot both
+        // follow fork servers and override them with its own preference.
+        let daemon_owned = all_connected && daemon_owned_order_sessions == connected;
+        let agent_order = if all_connected
             && order_modes.len() == connected
             && order_modes.iter().all(|mode| *mode == order_modes[0])
         {
@@ -699,9 +714,15 @@ impl DaemonRuntime {
                 available: true,
                 mode: order_modes[0],
             }
+        } else if daemon_owned {
+            AgentOrderSnapshot {
+                available: true,
+                mode: state.herdr_order,
+            }
         } else {
             AgentOrderSnapshot::default()
         };
+        state.herdr_order_daemon_owned = daemon_owned;
         apply_agent_order(&mut agents, &agent_order);
         state.snapshot.sessions = sessions;
         state.snapshot.agents = agents;
@@ -798,11 +819,11 @@ impl DaemonRuntime {
 
         if matches!(
             command.action,
-            ActionKind::ChatgptDesktop | ActionKind::ClaudeDesktop
+            ActionKind::SpotifyDesktop | ActionKind::DiscordDesktop
         ) {
             let app = match command.action {
-                ActionKind::ChatgptDesktop => DesktopApp::ChatGpt,
-                ActionKind::ClaudeDesktop => DesktopApp::Claude,
+                ActionKind::SpotifyDesktop => DesktopApp::Spotify,
+                ActionKind::DiscordDesktop => DesktopApp::Discord,
                 _ => unreachable!("desktop command filtered before dispatch"),
             };
             return match self.desktop.focus_or_launch(app).await {
@@ -887,8 +908,8 @@ impl DaemonRuntime {
             ActionKind::Approve
             | ActionKind::Interrupt
             | ActionKind::RestoreFocus
-            | ActionKind::ChatgptDesktop
-            | ActionKind::ClaudeDesktop
+            | ActionKind::SpotifyDesktop
+            | ActionKind::DiscordDesktop
             | ActionKind::VoiceStart
             | ActionKind::VoiceStop
             | ActionKind::VoiceCancel
@@ -1009,11 +1030,19 @@ impl DaemonRuntime {
             ActionKind::OrderPriority => AgentOrderMode::Priority,
             _ => unreachable!("ordering command filtered before dispatch"),
         };
-        if self.state.read().await.backend == AgentBackend::T3code {
-            // T3 Code has no ordering preference of its own, so the daemon
-            // owns this typed setting for T3 Code rosters.
+        let daemon_owned = {
+            let state = self.state.read().await;
+            state.backend == AgentBackend::T3code || state.herdr_order_daemon_owned
+        };
+        if daemon_owned {
+            // T3 Code and stock Herdr have no ordering preference of their
+            // own, so the daemon owns this typed setting for those rosters.
             let mut state = self.state.write().await;
-            state.t3code_order = mode;
+            if state.backend == AgentBackend::T3code {
+                state.t3code_order = mode;
+            } else {
+                state.herdr_order = mode;
+            }
             state.snapshot.agent_order = AgentOrderSnapshot {
                 available: true,
                 mode,
@@ -1025,6 +1054,7 @@ impl DaemonRuntime {
             let persisted = PersistedBackend {
                 backend: state.backend,
                 t3code_order: state.t3code_order,
+                herdr_order: state.herdr_order,
             };
             drop(state);
             self.persist_backend(persisted).await;
@@ -1189,6 +1219,7 @@ impl DaemonRuntime {
         state.snapshot.sessions.clear();
         state.snapshot.agents.clear();
         state.snapshot.agent_order = AgentOrderSnapshot::default();
+        state.herdr_order_daemon_owned = false;
         state.snapshot.connection = ConnectionState::Reconnecting;
         state.snapshot.backend = AgentBackendSnapshot {
             mode,
@@ -1199,6 +1230,7 @@ impl DaemonRuntime {
         let persisted = PersistedBackend {
             backend: state.backend,
             t3code_order: state.t3code_order,
+            herdr_order: state.herdr_order,
         };
         drop(state);
         self.persist_backend(persisted).await;
@@ -2336,6 +2368,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn stock_herdr_ordering_is_daemon_owned_and_never_calls_herdr() {
+        let temp = tempfile::tempdir().unwrap();
+        let binary = temp.path().join("herdr");
+        fs::write(&binary, "#!/bin/sh\nexit 1\n").unwrap();
+        fs::set_permissions(&binary, fs::Permissions::from_mode(0o700)).unwrap();
+        let (runtime, _) = DaemonRuntime::new(Config {
+            herdr_bin: binary,
+            agent_backend: AgentBackend::Herdr,
+            ..Config::default()
+        })
+        .unwrap();
+        {
+            let mut state = runtime.state.write().await;
+            state.herdr_order_daemon_owned = true;
+            state.snapshot.sequence = 7;
+            state.snapshot.agent_order = AgentOrderSnapshot {
+                available: true,
+                mode: AgentOrderMode::Grouped,
+            };
+            state.snapshot.agents = vec![
+                AgentView {
+                    source_order: 0,
+                    ..test_agent("workspace-first", AgentStatus::Idle, false)
+                },
+                AgentView {
+                    source_order: 1,
+                    ..test_agent("attention-first", AgentStatus::Blocked, false)
+                },
+            ];
+        }
+
+        let result = runtime
+            .process_agent_order_command(&PortalCommand {
+                schema_version: SCHEMA_VERSION,
+                request_id: "order".into(),
+                sequence: 7,
+                agent_id: None,
+                action: ActionKind::OrderPriority,
+                capability_id: None,
+            })
+            .await;
+
+        assert!(result.ok);
+        let state = runtime.state.read().await;
+        assert_eq!(state.herdr_order, AgentOrderMode::Priority);
+        assert_eq!(state.t3code_order, AgentOrderMode::Grouped);
+        assert_eq!(state.snapshot.agent_order.mode, AgentOrderMode::Priority);
+        assert_eq!(state.snapshot.agents[0].id, "attention-first");
+        assert_eq!(state.snapshot.sequence, 8);
+    }
+
+    #[tokio::test]
     async fn t3code_agent_actions_never_reach_herdr_or_launch_applications() {
         let (runtime, _) = DaemonRuntime::new(Config {
             agent_backend: AgentBackend::T3code,
@@ -2494,6 +2578,7 @@ mod tests {
         let persisted = PersistedBackend {
             backend: AgentBackend::T3code,
             t3code_order: AgentOrderMode::Priority,
+            herdr_order: AgentOrderMode::Priority,
         };
         save_persisted_backend(&path, &persisted).unwrap();
         assert_eq!(load_persisted_backend(&path), Some(persisted));

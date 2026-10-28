@@ -29,6 +29,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 // deliberately absent: upstream and the XENEON fork both report it, so it does
 // not identify which API series the server carries.
 const SUPPORTED_HERDR_PROTOCOLS: [u32; 2] = [20, 22];
+const STOCK_HERDR_PROTOCOL: u32 = 22;
 
 fn supported_protocols_label() -> String {
     SUPPORTED_HERDR_PROTOCOLS
@@ -67,6 +68,9 @@ pub struct SessionObservation {
     pub targets: HashMap<String, HerdrTarget>,
     pub pane_ids: Vec<String>,
     pub agent_order: Option<AgentOrderMode>,
+    /// The server has no ordering API at all, so the daemon owns the
+    /// preference instead of reporting ordering as unavailable.
+    pub daemon_owned_order: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -217,6 +221,7 @@ impl HerdrClient {
                 targets: HashMap::new(),
                 pane_ids: Vec::new(),
                 agent_order: None,
+                daemon_owned_order: false,
             });
         }
         let response: SnapshotResponse = request(
@@ -224,11 +229,18 @@ impl HerdrClient {
             json!({"id": request_id(), "method": "session.snapshot", "params": {}}),
         )
         .await?;
-        let agent_order = match self.get_agent_order(descriptor).await {
-            Ok(mode) => Some(mode),
-            Err(error) => {
-                tracing::debug!(session = %descriptor.name, %error, "Herdr agent ordering API unavailable");
-                None
+        // Stock Herdr has no ordering API, so asking would only return an
+        // unknown-method error on every refresh.
+        let daemon_owned_order = ping.result.protocol == STOCK_HERDR_PROTOCOL;
+        let agent_order = if daemon_owned_order {
+            None
+        } else {
+            match self.get_agent_order(descriptor).await {
+                Ok(mode) => Some(mode),
+                Err(error) => {
+                    tracing::debug!(session = %descriptor.name, %error, "Herdr agent ordering API unavailable");
+                    None
+                }
             }
         };
 
@@ -322,6 +334,7 @@ impl HerdrClient {
             targets,
             pane_ids,
             agent_order,
+            daemon_owned_order,
         })
     }
 
@@ -373,7 +386,7 @@ impl HerdrClient {
                 let capability_id = capability_id.ok_or_else(|| anyhow!("missing capability"))?;
                 json!({"id": request_id(), "method": "agent.perform_action", "params": {"capability_id": capability_id}})
             }
-            ActionKind::RestoreFocus | ActionKind::ChatgptDesktop | ActionKind::ClaudeDesktop => {
+            ActionKind::RestoreFocus | ActionKind::SpotifyDesktop | ActionKind::DiscordDesktop => {
                 bail!("action is owned by the desktop adapter")
             }
             ActionKind::VoiceStart | ActionKind::VoiceStop | ActionKind::VoiceCancel => {
@@ -901,18 +914,12 @@ mod tests {
                 .await
                 .unwrap();
 
-            let (stream, _) = listener.accept().await.unwrap();
-            let (read, mut write) = stream.into_split();
-            let mut lines = BufReader::new(read).lines();
-            let request: Value =
-                serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
-            assert_eq!(request["method"], "agent.order.get");
-            write
-                .write_all(
-                    b"{\"id\":\"\",\"error\":{\"code\":\"invalid_request\",\"message\":\"invalid request: unknown variant `agent.order.get`\"}}\n",
-                )
-                .await
-                .unwrap();
+            // Stock Herdr has no ordering API, so no third request is made.
+            assert!(
+                timeout(Duration::from_millis(100), listener.accept())
+                    .await
+                    .is_err()
+            );
         });
         let descriptor = SessionDescriptor {
             name: "default".into(),
@@ -929,6 +936,7 @@ mod tests {
         assert_eq!(observation.session.version.as_deref(), Some("0.9.1"));
         assert_eq!(observation.session.protocol, Some(22));
         assert_eq!(observation.agent_order, None);
+        assert!(observation.daemon_owned_order);
         assert_eq!(observation.agents.len(), 1);
         assert_eq!(observation.agents[0].display_name, "review");
         assert_eq!(observation.agents[0].status, AgentStatus::Working);

@@ -19,8 +19,8 @@ const PORTAL_PREVIEW_CLASS_PREFIX: &str = "org.xeneon-edge.agent-portal-preview"
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DesktopApp {
-    ChatGpt,
-    Claude,
+    Spotify,
+    Discord,
     T3code,
 }
 
@@ -370,15 +370,15 @@ fn select_desktop_candidate(
 
 fn desktop_app_spec(app: DesktopApp) -> DesktopAppSpec {
     match app {
-        DesktopApp::ChatGpt => DesktopAppSpec {
-            desktop_id: "chatgpt.desktop",
-            class: "chatgpt",
-            main_title: "ChatGPT",
+        DesktopApp::Spotify => DesktopAppSpec {
+            desktop_id: "spotify.desktop",
+            class: "spotify",
+            main_title: "Spotify",
         },
-        DesktopApp::Claude => DesktopAppSpec {
-            desktop_id: "com.anthropic.Claude.desktop",
-            class: "com.anthropic.Claude",
-            main_title: "Claude",
+        DesktopApp::Discord => DesktopAppSpec {
+            desktop_id: "Discord.desktop",
+            class: "chrome-discord.com__channels_@me-Default",
+            main_title: "Discord",
         },
         DesktopApp::T3code => DesktopAppSpec {
             desktop_id: "t3code.desktop",
@@ -964,19 +964,19 @@ mod tests {
     #[test]
     fn desktop_apps_are_fixed_allowlisted_targets() {
         assert_eq!(
-            desktop_app_spec(DesktopApp::ChatGpt),
+            desktop_app_spec(DesktopApp::Spotify),
             DesktopAppSpec {
-                desktop_id: "chatgpt.desktop",
-                class: "chatgpt",
-                main_title: "ChatGPT",
+                desktop_id: "spotify.desktop",
+                class: "spotify",
+                main_title: "Spotify",
             }
         );
         assert_eq!(
-            desktop_app_spec(DesktopApp::Claude),
+            desktop_app_spec(DesktopApp::Discord),
             DesktopAppSpec {
-                desktop_id: "com.anthropic.Claude.desktop",
-                class: "com.anthropic.Claude",
-                main_title: "Claude",
+                desktop_id: "Discord.desktop",
+                class: "chrome-discord.com__channels_@me-Default",
+                main_title: "Discord",
             }
         );
         assert_eq!(
@@ -1014,14 +1014,14 @@ mod tests {
     fn desktop_candidate_prefers_main_window_then_recent_focus() {
         let clients: Vec<HyprClient> = serde_json::from_str(
             r#"[
-                {"address":"0x1","class":"chatgpt","initialClass":"chatgpt","title":"Quick Chat","initialTitle":"Quick Chat","pid":1,"monitor":0,"floating":true,"focusHistoryID":0},
-                {"address":"0x2","class":"chatgpt","initialClass":"chatgpt","title":"Thread A","initialTitle":"ChatGPT","pid":2,"monitor":0,"floating":false,"focusHistoryID":4},
-                {"address":"0x3","class":"chatgpt","initialClass":"chatgpt","title":"Thread B","initialTitle":"ChatGPT","pid":3,"monitor":0,"floating":false,"focusHistoryID":1}
+                {"address":"0x1","class":"spotify","initialClass":"spotify","title":"Quick Chat","initialTitle":"Quick Chat","pid":1,"monitor":0,"floating":true,"focusHistoryID":0},
+                {"address":"0x2","class":"spotify","initialClass":"spotify","title":"Thread A","initialTitle":"Spotify","pid":2,"monitor":0,"floating":false,"focusHistoryID":4},
+                {"address":"0x3","class":"spotify","initialClass":"spotify","title":"Thread B","initialTitle":"Spotify","pid":3,"monitor":0,"floating":false,"focusHistoryID":1}
             ]"#,
         )
         .unwrap();
 
-        let selected = select_desktop_candidate(&clients, desktop_app_spec(DesktopApp::ChatGpt))
+        let selected = select_desktop_candidate(&clients, desktop_app_spec(DesktopApp::Spotify))
             .unwrap()
             .unwrap();
         assert_eq!(selected.address, "0x3");
@@ -1031,26 +1031,26 @@ mod tests {
     fn desktop_candidate_fails_closed_when_narrowing_is_still_ambiguous() {
         let clients: Vec<HyprClient> = serde_json::from_str(
             r#"[
-                {"address":"0x1","class":"chatgpt","initialClass":"chatgpt","title":"Thread A","initialTitle":"ChatGPT","pid":1,"monitor":0,"floating":false},
-                {"address":"0x2","class":"chatgpt","initialClass":"chatgpt","title":"Thread B","initialTitle":"ChatGPT","pid":2,"monitor":0,"floating":false}
+                {"address":"0x1","class":"spotify","initialClass":"spotify","title":"Thread A","initialTitle":"Spotify","pid":1,"monitor":0,"floating":false},
+                {"address":"0x2","class":"spotify","initialClass":"spotify","title":"Thread B","initialTitle":"Spotify","pid":2,"monitor":0,"floating":false}
             ]"#,
         )
         .unwrap();
 
-        assert!(select_desktop_candidate(&clients, desktop_app_spec(DesktopApp::ChatGpt)).is_err());
+        assert!(select_desktop_candidate(&clients, desktop_app_spec(DesktopApp::Spotify)).is_err());
     }
 
     #[test]
     fn desktop_candidate_fails_closed_on_partial_focus_history() {
         let clients: Vec<HyprClient> = serde_json::from_str(
             r#"[
-                {"address":"0x1","class":"chatgpt","initialClass":"chatgpt","title":"Thread A","initialTitle":"ChatGPT","pid":1,"monitor":0,"floating":false},
-                {"address":"0x2","class":"chatgpt","initialClass":"chatgpt","title":"Thread B","initialTitle":"ChatGPT","pid":2,"monitor":0,"floating":false,"focusHistoryID":0}
+                {"address":"0x1","class":"spotify","initialClass":"spotify","title":"Thread A","initialTitle":"Spotify","pid":1,"monitor":0,"floating":false},
+                {"address":"0x2","class":"spotify","initialClass":"spotify","title":"Thread B","initialTitle":"Spotify","pid":2,"monitor":0,"floating":false,"focusHistoryID":0}
             ]"#,
         )
         .unwrap();
 
-        assert!(select_desktop_candidate(&clients, desktop_app_spec(DesktopApp::ChatGpt)).is_err());
+        assert!(select_desktop_candidate(&clients, desktop_app_spec(DesktopApp::Spotify)).is_err());
     }
 
     #[test]
@@ -1068,7 +1068,7 @@ mod tests {
         assert!(is_portal_preview_class(
             "org.xeneon-edge.agent-portal-preview.123"
         ));
-        assert!(!is_portal_preview_class("chatgpt"));
+        assert!(!is_portal_preview_class("spotify"));
     }
 
     #[tokio::test]
@@ -1085,9 +1085,9 @@ mod tests {
                 r#"#!/bin/sh
 if [ "$1" = "clients" ]; then
   if [ -e "{marker}" ]; then
-    printf '%s\n' '[{{"address":"0xdef","class":"com.anthropic.Claude","initialClass":"com.anthropic.Claude","title":"Claude","pid":43,"monitor":0}},{{"address":"0xabc","class":"chatgpt","initialClass":"chatgpt","title":"ChatGPT","pid":42,"monitor":0}}]'
+    printf '%s\n' '[{{"address":"0xdef","class":"chrome-discord.com__channels_@me-Default","initialClass":"chrome-discord.com__channels_@me-Default","title":"Discord","pid":43,"monitor":0}},{{"address":"0xabc","class":"spotify","initialClass":"spotify","title":"Spotify","pid":42,"monitor":0}}]'
   else
-    printf '%s\n' '[{{"address":"0xdef","class":"com.anthropic.Claude","initialClass":"com.anthropic.Claude","title":"Claude","pid":43,"monitor":0}}]'
+    printf '%s\n' '[{{"address":"0xdef","class":"chrome-discord.com__channels_@me-Default","initialClass":"chrome-discord.com__channels_@me-Default","title":"Discord","pid":43,"monitor":0}}]'
   fi
 elif [ "$1" = "dispatch" ]; then
   printf '%s\n' "$*" >> "{focus_log}"
@@ -1124,25 +1124,25 @@ sleep 1
         let first_controller = Arc::clone(&controller);
         let first =
             tokio::spawn(
-                async move { first_controller.focus_or_launch(DesktopApp::ChatGpt).await },
+                async move { first_controller.focus_or_launch(DesktopApp::Spotify).await },
             );
         tokio::time::sleep(Duration::from_millis(5)).await;
         let second_controller = Arc::clone(&controller);
         let second =
             tokio::spawn(
-                async move { second_controller.focus_or_launch(DesktopApp::ChatGpt).await },
+                async move { second_controller.focus_or_launch(DesktopApp::Spotify).await },
             );
         let other_app_controller = Arc::clone(&controller);
         let other_app = tokio::spawn(async move {
             other_app_controller
-                .focus_or_launch(DesktopApp::Claude)
+                .focus_or_launch(DesktopApp::Discord)
                 .await
         });
 
         assert_eq!(
             tokio::time::timeout(Duration::from_millis(150), other_app)
                 .await
-                .expect("another app must not wait for ChatGPT mapping")
+                .expect("another app must not wait for Spotify mapping")
                 .unwrap()
                 .unwrap(),
             DesktopAppOutcome::Focused
@@ -1159,7 +1159,7 @@ sleep 1
         assert_eq!(fs::read_to_string(&launch_log).unwrap().lines().count(), 1);
         assert_eq!(
             fs::read_to_string(launch_log).unwrap().trim(),
-            "app -t service -- chatgpt.desktop"
+            "app -t service -- spotify.desktop"
         );
         assert_eq!(fs::read_to_string(focus_log).unwrap().lines().count(), 3);
     }
@@ -1199,13 +1199,13 @@ printf '%s\n' "$*" >> "{launch_log}"
 
         assert!(
             controller
-                .focus_or_launch(DesktopApp::ChatGpt)
+                .focus_or_launch(DesktopApp::Spotify)
                 .await
                 .is_err()
         );
         assert!(
             controller
-                .focus_or_launch(DesktopApp::ChatGpt)
+                .focus_or_launch(DesktopApp::Spotify)
                 .await
                 .is_err()
         );

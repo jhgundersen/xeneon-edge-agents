@@ -151,12 +151,12 @@ QtObject {
         return sendBuilt("restore_focus", "", "", sequence)
     }
 
-    function openChatGptDesktop() {
-        return sendBuilt("chatgpt_desktop", "", "", store.sequence)
+    function openSpotifyDesktop() {
+        return sendBuilt("spotify_desktop", "", "", store.sequence)
     }
 
-    function openClaudeDesktop() {
-        return sendBuilt("claude_desktop", "", "", store.sequence)
+    function openDiscordDesktop() {
+        return sendBuilt("discord_desktop", "", "", store.sequence)
     }
 
     function startVoice() {

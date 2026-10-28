@@ -45,8 +45,8 @@ TestCase {
         property bool ready: true
         property int orderRequests: 0
         property string lastOrder: ""
-        property int chatGptRequests: 0
-        property int claudeRequests: 0
+        property int spotifyRequests: 0
+        property int discordRequests: 0
         property int backendRequests: 0
         property string lastBackend: ""
 
@@ -54,13 +54,13 @@ TestCase {
         function openAgent(agentId) { return agentId }
         function approveAgent() { return "approve" }
         function interruptAgent() { return "interrupt" }
-        function openChatGptDesktop() {
-            chatGptRequests += 1
-            return "chatgpt-" + chatGptRequests
+        function openSpotifyDesktop() {
+            spotifyRequests += 1
+            return "spotify-" + spotifyRequests
         }
-        function openClaudeDesktop() {
-            claudeRequests += 1
-            return "claude-" + claudeRequests
+        function openDiscordDesktop() {
+            discordRequests += 1
+            return "discord-" + discordRequests
         }
         function startVoice() { return "voice-start" }
         function stopVoice() { return "voice-stop" }
@@ -155,8 +155,8 @@ TestCase {
         mockStore.testSurfaceState = ""
         mockBridge.orderRequests = 0
         mockBridge.lastOrder = ""
-        mockBridge.chatGptRequests = 0
-        mockBridge.claudeRequests = 0
+        mockBridge.spotifyRequests = 0
+        mockBridge.discordRequests = 0
         mockBridge.backendRequests = 0
         mockBridge.lastBackend = ""
         portal.pendingDesktopActions = ({})
@@ -186,7 +186,69 @@ TestCase {
         wait(0)
     }
 
+    function workspaceAgents(sizes) {
+        var result = []
+        for (var lane = 0; lane < sizes.length; lane += 1) {
+            for (var index = 0; index < sizes[lane]; index += 1) {
+                var value = agent(result.length)
+                value.workspace = "space-" + lane
+                result.push(value)
+            }
+        }
+        return result
+    }
+
+    function test_groupedOrderRendersOneLanePerWorkspace() {
+        mockStore.agents = workspaceAgents([2, 1, 3])
+        wait(0)
+        verify(portal.laneLayout)
+        compare(portal.pageCount, 1)
+        var page = portal.lanePage(0)
+        compare(page.lanes.length, 3)
+        compare(page.columns, 4)
+        compare(page.rows, 2)
+        compare(page.lanes[2].columns, 2)
+
+        var grid = findChild(portal, "agentGrid_0")
+        var lanes = findChild(portal, "agentLanes_0")
+        verify(grid !== null)
+        verify(lanes !== null)
+        compare(findChild(portal, "agentCard_0_0"), null)
+        compare(findChild(portal, "agentLaneLabel_0_0").text, "SPACE-0  //  2")
+        compare(findChild(portal, "agentLaneLabel_0_2").text, "SPACE-2  //  3")
+        var first = findChild(portal, "agentLane_0_0")
+        var last = findChild(portal, "agentLane_0_2")
+        verify(last.x + last.width <= lanes.width + 0.5)
+        verify(last.width > first.width * 1.9)
+        var lastCard = findChild(portal, "laneCard_0_2_2")
+        verify(lastCard !== null)
+        compare(lastCard.agent.id, "layout-agent-5")
+        verify(lastCard.height > 200)
+    }
+
+    function test_lanesPackWholeWorkspacesOntoPages() {
+        // 6 + 6 + 4 agents need 3 + 3 + 2 columns; only 7 fit on a page.
+        mockStore.agents = workspaceAgents([6, 6, 4])
+        wait(0)
+        compare(portal.pageCount, 2)
+        compare(portal.lanePage(0).lanes.length, 2)
+        compare(portal.lanePage(0).columns, 6)
+        compare(portal.lanePage(1).lanes.length, 1)
+        compare(portal.lanePage(1).lanes[0].label, "space-2")
+    }
+
+    function test_priorityOrderKeepsTheFlatGrid() {
+        mockStore.agents = workspaceAgents([2, 1, 3])
+        mockStore.agentOrder = {"available": true, "mode": "priority"}
+        wait(0)
+        verify(!portal.laneLayout)
+        verify(findChild(portal, "agentCard_0_0") !== null)
+        compare(findChild(portal, "agentLane_0_0"), null)
+    }
+
     function test_twentyAgentsUseFourteenPlusSixPages() {
+        mockStore.agentOrder = {"available": true, "mode": "priority"}
+        wait(0)
         compare(portal.pageSize, 14)
         compare(portal.pageCount, 2)
         compare(portal.pageAgentCount(0), 14)
@@ -338,50 +400,50 @@ TestCase {
     function test_desktopLaunchersSitImmediatelyAfterOrderWithoutOverlap() {
         var actions = findChild(portal, "headerActions")
         var order = findChild(portal, "agentOrderToggle")
-        var chatGpt = findChild(portal, "chatGptDesktopButton")
-        var claude = findChild(portal, "claudeDesktopButton")
+        var spotify = findChild(portal, "spotifyDesktopButton")
+        var discord = findChild(portal, "discordDesktopButton")
         var dots = findChild(portal, "pageDots")
         verify(actions !== null)
         verify(order !== null)
-        verify(chatGpt !== null)
-        verify(claude !== null)
+        verify(spotify !== null)
+        verify(discord !== null)
         verify(dots !== null)
 
-        compare(chatGpt.x, order.x + order.width + actions.spacing)
-        compare(claude.x, chatGpt.x + chatGpt.width + actions.spacing)
+        compare(spotify.x, order.x + order.width + actions.spacing)
+        compare(discord.x, spotify.x + spotify.width + actions.spacing)
         verify(actions.x + actions.width < dots.x)
-        compare(chatGpt.Accessible.name, "CHATGPT")
-        compare(claude.Accessible.name, "CLAUDE")
-        verify(chatGpt.enabled)
-        verify(claude.enabled)
+        compare(spotify.Accessible.name, "SPOTIFY")
+        compare(discord.Accessible.name, "DISCORD")
+        verify(spotify.enabled)
+        verify(discord.enabled)
 
-        verify(chatGpt.activate())
-        compare(mockBridge.chatGptRequests, 1)
-        compare(mockBridge.claudeRequests, 0)
-        verify(chatGpt.pending)
-        verify(!chatGpt.activate())
-        compare(mockBridge.chatGptRequests, 1)
+        verify(spotify.activate())
+        compare(mockBridge.spotifyRequests, 1)
+        compare(mockBridge.discordRequests, 0)
+        verify(spotify.pending)
+        verify(!spotify.activate())
+        compare(mockBridge.spotifyRequests, 1)
         mockStore.actionResultReceived({
-            "request_id": "chatgpt-1",
-            "action": "chatgpt_desktop",
+            "request_id": "spotify-1",
+            "action": "spotify_desktop",
             "ok": true,
             "code": "desktop_ready",
             "message": "desktop_ready"
         })
-        verify(!chatGpt.pending)
+        verify(!spotify.pending)
 
-        verify(claude.activate())
-        compare(mockBridge.chatGptRequests, 1)
-        compare(mockBridge.claudeRequests, 1)
-        verify(claude.pending)
+        verify(discord.activate())
+        compare(mockBridge.spotifyRequests, 1)
+        compare(mockBridge.discordRequests, 1)
+        verify(discord.pending)
         mockStore.actionResultReceived({
-            "request_id": "claude-1",
-            "action": "claude_desktop",
+            "request_id": "discord-1",
+            "action": "discord_desktop",
             "ok": false,
             "code": "desktop_launch_failed",
             "message": "desktop_launch_failed"
         })
-        verify(!claude.pending)
+        verify(!discord.pending)
     }
 
     function test_lowerCountsAndShrinkClampSafely() {
