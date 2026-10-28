@@ -44,17 +44,15 @@ the source.
   inside the constellation while independent integer-rate lanes intentionally
   advance, cross, and sometimes overlap. Reduced motion alone uses static,
   evenly spaced nodes.
-- The perimeter light is one GPU-blurred status bloom with two opposing
-  clockwise runners, short soft glints, and six bounded trailing motes per
-  runner. It represents active agent execution only: working and blocked use
-  their configured semantic roles, and the halo disappears when every agent
-  is idle or no agent is present. Voice and review-ready state remain explicit
-  in the center/header treatments instead of creating unrelated edge motion.
+- There is no perimeter light. The earlier two-runner edge halo drew too much
+  attention on a display that sits in peripheral vision, so agent execution
+  is shown only on the agent cards and in the ambient constellation. Voice and
+  review-ready state remain explicit in the center/header treatments.
 - Voice can override the center and ambient treatment through the existing
   bounded `idle`, `recording`, `processing`, `error`, and `unavailable`
   protocol states. QML does not infer audio level or transcript content.
 - Reduced motion renders the final centered constellation at fixed positions,
-  removes the agent trails and the two perimeter runners, and disables
+  removes the agent trails, and disables
   continuous orbit.
 - The global Motion and Screen controls remain reachable in the upper-right
   corner in both Ambient and control-center views. Their state persists across

@@ -131,7 +131,7 @@ Herdr Agents panel and EDGE cards stay synchronized instead of keeping separate
 preferences.
 The upper-right Motion and Screen controls are shared by the command-center
 and Ambient views. Motion snaps the ambient constellation to fixed positions
-and removes perimeter/trail animation; Screen applies a reversible near-black
+and removes trail animation; Screen applies a reversible near-black
 portal veil. These presentation settings persist across portal restarts.
 
 Portal chrome follows Omarchy's active runtime theme. The named Quickshell

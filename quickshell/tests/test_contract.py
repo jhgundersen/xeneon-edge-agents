@@ -453,7 +453,6 @@ class QmlSafetyContractTests(unittest.TestCase):
 
     def test_voice_and_ring_stay_presentation_only_and_reduce_motion(self):
         voice = source("components/VoiceControl.qml")
-        ring = source("components/AmbientRing.qml")
         bridge = source("state/PortalBridge.qml")
         portal = source("components/PortalView.qml")
         shell = source("shell.qml")
@@ -471,19 +470,7 @@ class QmlSafetyContractTests(unittest.TestCase):
         self.assertIn("if (result.ok)", portal)
         self.assertIn("VOICE // FOCUS REQUIRED", portal)
         self.assertIn("restoreVoiceFocus: root.livePreviewMode", shell)
-        self.assertIn("&& !reducedMotion", ring)
-        self.assertIn("runnerCount: 2", ring)
-        self.assertIn("runnerOffset: 0.5", ring)
-        self.assertIn("import QtQuick.Effects", ring)
-        self.assertIn("MultiEffect", ring)
-        self.assertIn("blurEnabled: true", ring)
-        self.assertIn("particleCountPerRunner: 6", ring)
-        self.assertNotIn("Canvas", ring)
-        self.assertIn("Palette.perimeterMode(agents)", ring)
-        self.assertIn("dashOffset: root.phase", ring)
-        self.assertNotIn("id: topBeam", ring)
         self.assertNotIn("Process {", voice)
-        self.assertNotIn("Process {", ring)
 
     def test_display_settings_are_shared_persistent_and_presentation_only(self):
         shell = source("shell.qml")
@@ -491,7 +478,6 @@ class QmlSafetyContractTests(unittest.TestCase):
         controls = source("components/DisplaySettingsControls.qml")
         palette_pane = source("components/PaletteSettingsPane.qml")
         button = source("components/DisplaySettingButton.qml")
-        ring = source("components/AmbientRing.qml")
         service = (ROOT.parent / "config/systemd/user/"
                    "xeneon-edge-portal.service.in").read_text(
                        encoding="utf-8"
@@ -529,10 +515,7 @@ class QmlSafetyContractTests(unittest.TestCase):
         self.assertIn('objectName: "globalDisplaySettings"', portal)
         self.assertIn("rightMargin: displaySettings.width + 16", portal)
         self.assertIn("readonly property bool effectiveReducedMotion", portal)
-        self.assertIn(
-            "suppressRunners: root.effectiveReducedMotion",
-            portal,
-        )
+        self.assertNotIn("AmbientRing", portal)
         self.assertIn('objectName: "displayDimmer"', portal)
         self.assertIn("opacity: root.displayDimmed ? 0.88 : 0", portal)
         self.assertIn("enabled: false", portal)
@@ -545,8 +528,6 @@ class QmlSafetyContractTests(unittest.TestCase):
         self.assertIn('stateLabel: root.dimmed ? "MINIMUM" : "NORMAL"', controls)
         self.assertIn("Accessible.role: Accessible.Button", button)
         self.assertIn("TapHandler.ReleaseWithinBounds", button)
-        self.assertIn("property bool suppressRunners: false", ring)
-        self.assertIn('mode !== "off" && !suppressRunners', ring)
         self.assertNotIn("Process {", controls)
         self.assertNotIn("Process {", palette_pane)
         self.assertNotIn("Process {", button)

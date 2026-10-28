@@ -28,32 +28,11 @@ TestCase {
         "textPrimary": "#eeeeee"
     })
 
-    AmbientRing {
-        id: halo
-
-        width: 2560
-        height: 720
-        reducedMotion: true
-        connectionState: "connected"
-        voice: ({"state": "idle"})
-        theme: semanticTheme
-    }
-
     function agent(status, reviewReady) {
         return {
             "status": status,
             "review_ready": reviewReady === true
         }
-    }
-
-    function init() {
-        halo.suppressRunners = false
-        halo.agents = []
-    }
-
-    function cleanup() {
-        halo.suppressRunners = false
-        halo.agents = []
     }
 
     function test_agentColorsFollowThemeSemanticRoles() {
@@ -154,45 +133,4 @@ TestCase {
         ), "blocked")
     }
 
-    function test_perimeterHaloRunsOnlyForNonIdleAgentExecution() {
-        compare(Palette.perimeterMode([]), "off")
-        compare(Palette.perimeterMode([agent("idle")]), "off")
-        compare(Palette.perimeterMode([agent("idle", true)]), "off")
-        compare(Palette.perimeterMode([agent("done", true)]), "off")
-        compare(
-            Palette.perimeterMode([agent("working"), agent("idle")]),
-            "working"
-        )
-        compare(
-            Palette.perimeterMode([agent("working"), agent("blocked")]),
-            "blocked"
-        )
-    }
-
-    function test_perimeterHaloHasTwoOpposingClockwiseRunners() {
-        halo.agents = [agent("working")]
-        compare(halo.active, true)
-        compare(halo.moving, false)
-        compare(halo.runnerCount, 2)
-        compare(halo.runnerOffset, 0.5)
-        compare(halo.particleCountPerRunner, 6)
-        compare(halo.glowBlurMax, 48)
-
-        halo.suppressRunners = true
-        compare(halo.active, false)
-        compare(halo.moving, false)
-
-        halo.suppressRunners = false
-        compare(halo.active, true)
-
-        var start = halo.perimeterPoint(0, halo.width, halo.height, 22)
-        var later = halo.perimeterPoint(0.1, halo.width, halo.height, 22)
-        compare(start.y, 0)
-        compare(later.y, 0)
-        verify(later.x > start.x)
-
-        halo.agents = [agent("idle")]
-        compare(halo.active, false)
-        compare(halo.moving, false)
-    }
 }

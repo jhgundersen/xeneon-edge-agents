@@ -64,18 +64,6 @@ function ambientMode(agents, voice, connectionState) {
     return "off"
 }
 
-function perimeterMode(agents) {
-    var hasWorking = false
-    for (var index = 0; index < agents.length; index += 1) {
-        var state = String(agents[index].status || "unknown").toLowerCase()
-        if (state === "blocked")
-            return "blocked"
-        if (state === "working")
-            hasWorking = true
-    }
-    return hasWorking ? "working" : "off"
-}
-
 function ambientColor(mode, theme) {
     switch (mode) {
     case "voice-recording":
@@ -133,13 +121,3 @@ function snakeDuration(mode) {
     }
 }
 
-function haloDuration(mode) {
-    switch (mode) {
-    case "blocked":
-        return 6200
-    case "working":
-        return 7600
-    default:
-        return 0
-    }
-}

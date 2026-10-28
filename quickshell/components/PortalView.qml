@@ -324,17 +324,6 @@ Item {
         ambientMode: root.activity.ambientMode
     }
 
-    AmbientRing {
-        anchors.fill: parent
-        theme: root.theme
-        agents: root.store.agents
-        voice: root.store.voice
-        connectionState: root.store.connection.state
-        reducedMotion: root.effectiveReducedMotion
-        suppressRunners: root.effectiveReducedMotion
-        z: 50
-    }
-
     Rectangle {
         id: displayDimmer
 
