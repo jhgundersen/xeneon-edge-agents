@@ -120,9 +120,9 @@ reused cache-read context is excluded) in the
 read-only SQLite message ledger. The AI footer shows both reported usage
 windows, resets, plan/freshness state, and bounded today/hour token activity
 when available.
-Header controls focus or launch 0-4 desktop apps configured per machine under
-`[[desktop.apps]]` in `~/.config/xeneon-edge-agents/config.toml` (Spotify and
-Discord when none are listed); see `config/xeneon-edge-agents/config.toml.example`.
+Header controls focus or launch 0-4 desktop apps configured per machine in
+`~/.config/xeneon-edge-agents/desktop-apps.toml` (Spotify and Discord when the
+file is absent); see `config/xeneon-edge-agents/desktop-apps.toml.example`.
 In Grouped order the cards are drawn as one lane per Herdr workspace, with the
 workspace name above each lane; Priority order keeps the flat attention grid. The Micro control opens a read-only virtual
 projection of the connected device and current agent slots.

@@ -67,6 +67,17 @@ pub struct DesktopConfig {
 }
 
 pub const MAX_DESKTOP_APPS: usize = 4;
+/// Per-machine shortcut list kept beside `config.toml`. The installer owns
+/// `config.toml` and refuses to overwrite a modified copy, so the list lives
+/// in a file it never writes.
+pub const DESKTOP_APPS_FILE_NAME: &str = "desktop-apps.toml";
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DesktopAppsFile {
+    #[serde(default)]
+    apps: Vec<DesktopAppConfig>,
+}
 const DESKTOP_APP_ACCENTS: [&str; 7] = [
     "accent", "green", "blue", "cyan", "magenta", "orange", "yellow",
 ];
@@ -199,14 +210,26 @@ impl Config {
         runtime_output: Option<&OsStr>,
     ) -> Result<Self> {
         let path = path.map(PathBuf::from).or_else(default_config_path);
-        let mut config = if let Some(path) = path.filter(|path| path.exists()) {
-            let contents = fs::read_to_string(&path)
+        let mut config = if let Some(path) = path.as_ref().filter(|path| path.exists()) {
+            let contents = fs::read_to_string(path)
                 .with_context(|| format!("reading config {}", path.display()))?;
             toml::from_str(&contents)
                 .with_context(|| format!("parsing config {}", path.display()))?
         } else {
             Self::default()
         };
+        if let Some(apps_path) = path
+            .as_deref()
+            .and_then(Path::parent)
+            .map(|directory| directory.join(DESKTOP_APPS_FILE_NAME))
+            .filter(|apps_path| apps_path.exists())
+        {
+            let contents = fs::read_to_string(&apps_path)
+                .with_context(|| format!("reading {}", apps_path.display()))?;
+            let file: DesktopAppsFile = toml::from_str(&contents)
+                .with_context(|| format!("parsing {}", apps_path.display()))?;
+            config.desktop.apps = file.apps;
+        }
         config.apply_runtime_output(runtime_output)?;
         Ok(config)
     }
@@ -418,6 +441,47 @@ mod tests {
 
         let five: Config = toml::from_str(&["a", "b", "c", "d", "e"].map(app).concat()).unwrap();
         assert!(five.validate().is_err());
+    }
+
+    #[test]
+    fn desktop_apps_file_beside_config_replaces_the_default_list() {
+        let temp = tempfile::tempdir().unwrap();
+        let config_path = temp.path().join("config.toml");
+        fs::write(&config_path, "[desktop]\nherdr_class = \"herdr\"\n").unwrap();
+        let loaded = Config::load_with_runtime_output(Some(&config_path), None).unwrap();
+        assert_eq!(loaded.desktop.apps, Config::default().desktop.apps);
+
+        let apps_path = temp.path().join(DESKTOP_APPS_FILE_NAME);
+        fs::write(&apps_path, app("slack").replace("desktop.apps", "apps")).unwrap();
+        let loaded = Config::load_with_runtime_output(Some(&config_path), None).unwrap();
+        assert_eq!(loaded.desktop.apps.len(), 1);
+        assert_eq!(loaded.desktop.apps[0].id, "slack");
+        loaded.validate().unwrap();
+
+        fs::write(&apps_path, "apps = []\n").unwrap();
+        let loaded = Config::load_with_runtime_output(Some(&config_path), None).unwrap();
+        assert!(loaded.desktop.apps.is_empty());
+
+        fs::write(&apps_path, "[[apps]]\nid = \"x\"\nexec = \"sh\"\n").unwrap();
+        assert!(Config::load_with_runtime_output(Some(&config_path), None).is_err());
+    }
+
+    #[test]
+    fn shipped_desktop_apps_example_matches_the_defaults() {
+        let file: DesktopAppsFile = toml::from_str(include_str!(
+            "../../../config/xeneon-edge-agents/desktop-apps.toml.example"
+        ))
+        .unwrap();
+        let config = Config {
+            desktop: DesktopConfig {
+                apps: file.apps,
+                ..DesktopConfig::default()
+            },
+            ..Config::default()
+        };
+        config.validate().unwrap();
+        let ids: Vec<_> = config.desktop.apps.iter().map(|app| &app.id).collect();
+        assert_eq!(ids, ["spotify", "discord"]);
     }
 
     #[test]

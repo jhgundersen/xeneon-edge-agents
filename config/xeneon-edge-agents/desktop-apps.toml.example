@@ -1,0 +1,30 @@
+# Header app shortcuts for the XENEON EDGE command center on this machine.
+# Copy to ~/.config/xeneon-edge-agents/desktop-apps.toml and restart the
+# daemon (systemctl --user restart xeneon-agentd). The installer never writes
+# this file, so it survives reinstalls.
+#
+# 0-4 entries, shown left to right. Delete every [[apps]] entry and write
+# `apps = []` for no shortcuts; remove the file to get Spotify and Discord.
+# The portal can only send back an id from this list; launching and focusing
+# are resolved by the daemon.
+#
+#   id          lowercase letters, digits, or "-"
+#   label       button text, at most 16 characters
+#   desktop_id  bare desktop entry file name, launched with `uwsm app`
+#   class       exact Hyprland window class (see `hyprctl clients`)
+#   title       optional initial title preferred when several windows match
+#   accent      accent, green, blue, cyan, magenta, orange, or yellow
+
+[[apps]]
+id = "spotify"
+label = "Spotify"
+desktop_id = "spotify.desktop"
+class = "spotify"
+accent = "green"
+
+[[apps]]
+id = "discord"
+label = "Discord"
+desktop_id = "Discord.desktop"
+class = "chrome-discord.com__channels_@me-Default"
+accent = "blue"

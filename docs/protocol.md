@@ -154,7 +154,7 @@ The only actions are:
   owned by this daemon instance.
 - `desktop_app`: takes no agent or capability and requires `app_id`, one of
   the ids in the snapshot's `desktop_apps` (0-4 entries from the daemon's
-  `[[desktop.apps]]` configuration). The daemon focuses the single exact
+  `desktop-apps.toml` or `[[desktop.apps]]` configuration). The daemon focuses the single exact
   compositor client with that entry's class, or launches its desktop entry
   when none exists. An id that is not configured is refused. `app_id` is
   rejected on every other action.
