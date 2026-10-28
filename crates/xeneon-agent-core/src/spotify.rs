@@ -89,6 +89,7 @@ impl SpotifyClient {
         let output = timeout(
             COMMAND_TIMEOUT,
             Command::new(&self.busctl_bin)
+                .kill_on_drop(true)
                 .args(args)
                 .stdin(Stdio::null())
                 .stderr(Stdio::piped())
@@ -142,7 +143,13 @@ fn parse_properties(stdout: &str) -> Result<SpotifySnapshot> {
         .unwrap_or_default();
     let art_url = metadata["mpris:artUrl"]["data"]
         .as_str()
-        .filter(|url| url.starts_with(ART_URL_PREFIX) && url.len() <= 256)
+        .filter(|url| {
+            url.starts_with(ART_URL_PREFIX)
+                && url.len() <= 256
+                && url
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b":/._-".contains(&byte))
+        })
         .map(str::to_owned);
     // MPRIS reports microseconds.
     let length_ms = metadata["mpris:length"]["data"].as_u64().unwrap_or(0) / 1000;

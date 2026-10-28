@@ -287,6 +287,10 @@ impl DaemonRuntime {
         let mut usage_collector = tokio::spawn(async move {
             usage_runtime.collect_usage_loop().await;
         });
+        let dashboard_runtime = self.clone();
+        let mut dashboard_collector = tokio::spawn(async move {
+            dashboard_runtime.collect_dashboard_loops().await;
+        });
         let agent_runtime = self.clone();
         let mut agent_collector = tokio::spawn(async move {
             agent_runtime.collect_agent_loop(invalidation_rx).await;
@@ -305,6 +309,10 @@ impl DaemonRuntime {
                 result = &mut usage_collector => {
                     result.context("joining usage state collector")?;
                     bail!("usage state collector stopped unexpectedly");
+                }
+                result = &mut dashboard_collector => {
+                    result.context("joining dashboard collectors")?;
+                    bail!("dashboard collectors stopped unexpectedly");
                 }
                 accepted = listener.accept() => {
                     let (stream, _) = accepted.context("accepting portal client")?;
@@ -326,15 +334,6 @@ impl DaemonRuntime {
         let mut voice_tick = interval(self.config.voice_refresh_interval());
         let mut micro_tick = interval(self.config.micro_refresh_interval());
         let spotify_enabled = self.config.dashboards.contains(&DashboardKind::Spotify);
-        let basecamp_enabled = self.config.dashboards.contains(&DashboardKind::Basecamp);
-        let mut basecamp_tick = interval(BASECAMP_REFRESH);
-        basecamp_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
-        let slack_enabled = self.config.dashboards.contains(&DashboardKind::Slack);
-        let mut slack_tick = interval(SLACK_REFRESH);
-        slack_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
-        let github_enabled = self.config.dashboards.contains(&DashboardKind::Github);
-        let mut github_tick = interval(GITHUB_REFRESH);
-        github_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut spotify_tick = interval(SPOTIFY_REFRESH);
         let mut spotify_published_at = Instant::now();
         spotify_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -374,39 +373,6 @@ impl DaemonRuntime {
                         self.publish().await;
                     }
                 }
-                _ = basecamp_tick.tick(), if basecamp_enabled => {
-                    let sample = self.basecamp.sample().await;
-                    let mut state = self.state.write().await;
-                    state.basecamp_urls = sample.urls;
-                    if state.snapshot.basecamp != sample.snapshot {
-                        state.snapshot.basecamp = sample.snapshot;
-                        state.snapshot.generated_at_ms = now_ms();
-                        drop(state);
-                        self.publish().await;
-                    }
-                }
-                _ = slack_tick.tick(), if slack_enabled => {
-                    let sample = self.slack.sample().await;
-                    let mut state = self.state.write().await;
-                    state.slack_urls = sample.urls;
-                    if state.snapshot.slack != sample.snapshot {
-                        state.snapshot.slack = sample.snapshot;
-                        state.snapshot.generated_at_ms = now_ms();
-                        drop(state);
-                        self.publish().await;
-                    }
-                }
-                _ = github_tick.tick(), if github_enabled => {
-                    let sample = self.github.sample().await;
-                    let mut state = self.state.write().await;
-                    state.github_urls = sample.urls;
-                    if state.snapshot.github != sample.snapshot {
-                        state.snapshot.github = sample.snapshot;
-                        state.snapshot.generated_at_ms = now_ms();
-                        drop(state);
-                        self.publish().await;
-                    }
-                }
                 _ = micro_tick.tick() => {
                     let sample = micro.sample().await;
                     let mut state = self.state.write().await;
@@ -417,6 +383,59 @@ impl DaemonRuntime {
                         self.publish().await;
                     }
                 }
+            }
+        }
+    }
+
+    /// Slack, GitHub, and Basecamp sample over the network and can take many
+    /// seconds, so they run here, each in its own loop, instead of delaying
+    /// the one-second health, voice, and Spotify refreshes or one another.
+    async fn collect_dashboard_loops(&self) {
+        tokio::join!(
+            self.dashboard_loop(DashboardKind::Basecamp, BASECAMP_REFRESH, || async {
+                let sample = self.basecamp.sample().await;
+                let mut state = self.state.write().await;
+                state.basecamp_urls = sample.urls;
+                let changed = state.snapshot.basecamp != sample.snapshot;
+                state.snapshot.basecamp = sample.snapshot;
+                changed
+            }),
+            self.dashboard_loop(DashboardKind::Slack, SLACK_REFRESH, || async {
+                let sample = self.slack.sample().await;
+                let mut state = self.state.write().await;
+                state.slack_urls = sample.urls;
+                let changed = state.snapshot.slack != sample.snapshot;
+                state.snapshot.slack = sample.snapshot;
+                changed
+            }),
+            self.dashboard_loop(DashboardKind::Github, GITHUB_REFRESH, || async {
+                let sample = self.github.sample().await;
+                let mut state = self.state.write().await;
+                state.github_urls = sample.urls;
+                let changed = state.snapshot.github != sample.snapshot;
+                state.snapshot.github = sample.snapshot;
+                changed
+            }),
+        );
+    }
+
+    /// Runs `refresh` every `period` while `dashboard` is enabled and
+    /// publishes when it reports a change; a disabled dashboard never samples.
+    async fn dashboard_loop<F, Fut>(&self, dashboard: DashboardKind, period: Duration, refresh: F)
+    where
+        F: Fn() -> Fut,
+        Fut: std::future::Future<Output = bool>,
+    {
+        if !self.config.dashboards.contains(&dashboard) {
+            return std::future::pending().await;
+        }
+        let mut tick = interval(period);
+        tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        loop {
+            tick.tick().await;
+            if refresh().await {
+                self.state.write().await.snapshot.generated_at_ms = now_ms();
+                self.publish().await;
             }
         }
     }
@@ -1288,14 +1307,12 @@ impl DaemonRuntime {
             ActionKind::OrderPriority => AgentOrderMode::Priority,
             _ => unreachable!("ordering command filtered before dispatch"),
         };
-        let daemon_owned = {
-            let state = self.state.read().await;
-            state.backend == AgentBackend::T3code || state.herdr_order_daemon_owned
-        };
-        if daemon_owned {
+        // Decide and apply under one write lock, so a Herdr refresh cannot
+        // change who owns ordering in between.
+        let mut state = self.state.write().await;
+        if state.backend == AgentBackend::T3code || state.herdr_order_daemon_owned {
             // T3 Code and stock Herdr have no ordering preference of their
             // own, so the daemon owns this typed setting for those rosters.
-            let mut state = self.state.write().await;
             if state.backend == AgentBackend::T3code {
                 state.t3code_order = mode;
             } else {
@@ -1319,6 +1336,7 @@ impl DaemonRuntime {
             self.publish().await;
             return action_ok(&command.request_id, "agent_order_updated");
         }
+        drop(state);
         let descriptors = match self.herdr.discover().await {
             Ok(descriptors) if !descriptors.is_empty() => descriptors,
             Ok(_) => {

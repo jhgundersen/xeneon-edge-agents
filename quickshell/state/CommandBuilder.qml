@@ -103,7 +103,7 @@ QtObject {
         }
 
         if (action === "basecamp_open"
-                && !/^[0-9]{1,20}$/.test(normalizedItemId)) {
+                && !/^[nc][0-9]{1,19}$/.test(normalizedItemId)) {
             lastError = "Basecamp open requires a published item_id"
             return null
         }

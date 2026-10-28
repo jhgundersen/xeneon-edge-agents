@@ -94,9 +94,14 @@ impl BasecampClient {
                 sample.snapshot.unread_count = output.total;
                 sample.snapshot.unreads_capped = output.capped;
                 for row in output.items.into_iter().take(MAX_NOTIFICATIONS) {
-                    remember_url(&mut sample.urls, &row.id, &row.url);
+                    // Notifications and cards share one id map; prefix them so
+                    // equal numbers can never open the wrong item.
+                    let Some(id) = item_id('n', &row.id) else {
+                        continue;
+                    };
+                    remember_url(&mut sample.urls, &id, &row.url);
                     sample.snapshot.notifications.push(BasecampNotification {
-                        id: row.id,
+                        id,
                         kind: notification_kind(&row.kind).into(),
                         title: bounded(&row.title, MAX_TEXT_CHARS),
                         project: bounded(&row.project, MAX_NAME_CHARS),
@@ -171,10 +176,11 @@ impl BasecampClient {
                     let cards = rows
                         .into_iter()
                         .take(MAX_CARDS_PER_LANE)
-                        .map(|row| {
-                            remember_url(urls, &row.id, &row.url);
-                            BasecampCard {
-                                id: row.id,
+                        .filter_map(|row| {
+                            let id = item_id('c', &row.id)?;
+                            remember_url(urls, &id, &row.url);
+                            Some(BasecampCard {
+                                id,
                                 title: bounded(&row.title, MAX_TEXT_CHARS),
                                 assignees: row
                                     .assignees
@@ -188,7 +194,7 @@ impl BasecampClient {
                                     .filter(|due| due.len() == 10)
                                     .map(|due| bounded(&due, 10)),
                                 comments: row.comments,
-                            }
+                            })
                         })
                         .collect();
                     board.lanes.push(BasecampLane {
@@ -208,6 +214,7 @@ impl BasecampClient {
         let output = timeout(
             COMMAND_TIMEOUT,
             Command::new(&self.config.bin)
+                .kill_on_drop(true)
                 .args(
                     self.config
                         .profile
@@ -239,8 +246,14 @@ impl BasecampClient {
     }
 }
 
+/// `n<id>` for notifications and `c<id>` for cards, from Basecamp's numeric id.
+fn item_id(prefix: char, id: &str) -> Option<String> {
+    ((1..=19).contains(&id.len()) && id.bytes().all(|byte| byte.is_ascii_digit()))
+        .then(|| format!("{prefix}{id}"))
+}
+
 fn remember_url(urls: &mut HashMap<String, String>, id: &str, url: &str) {
-    if is_basecamp_url(url) && id.bytes().all(|byte| byte.is_ascii_digit()) {
+    if is_basecamp_url(url) {
         urls.insert(id.to_owned(), url.to_owned());
     }
 }
@@ -347,9 +360,11 @@ esac
         assert_eq!(card.due_on.as_deref(), Some("2026-11-01"));
 
         // Only Basecamp URLs are kept, and none are published.
-        assert!(sample.urls.contains_key("11"));
-        assert!(sample.urls.contains_key("31"));
-        assert!(!sample.urls.contains_key("12"));
+        assert!(sample.urls.contains_key("n11"));
+        assert!(sample.urls.contains_key("c31"));
+        assert!(!sample.urls.contains_key("n12"));
+        assert_eq!(snapshot.notifications[0].id, "n11");
+        assert_eq!(board.lanes[0].cards[0].id, "c31");
         let published = serde_json::to_string(snapshot).unwrap();
         assert!(!published.contains("https://"));
     }

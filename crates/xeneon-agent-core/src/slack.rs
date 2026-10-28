@@ -24,8 +24,10 @@ const API_BASE: &str = "https://slack.com/api/";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 const CHANNEL_DIRECTORY_TTL: Duration = Duration::from_secs(600);
 const HISTORY_LIMIT: usize = 20;
-// DMs are checked round-robin so a long DM list stays inside rate limits.
-const DM_CHECKS_PER_SAMPLE: usize = 30;
+// DMs are checked round-robin so a long DM list stays inside rate limits:
+// conversations.info is Tier 3 (about 50 calls a minute) and also serves
+// the channels, sampled every 30 seconds.
+const DM_CHECKS_PER_SAMPLE: usize = 10;
 const MENTION_LIMIT: usize = 10;
 const MAX_NOTIFICATIONS: usize = 10;
 const MAX_TEXT_CHARS: usize = 500;
@@ -36,7 +38,8 @@ const MAX_IMAGES_PER_MESSAGE: usize = 2;
 const MAX_REACTIONS_PER_MESSAGE: usize = 8;
 // Older mentions have nothing left to say on a glanceable strip.
 const MENTION_MAX_AGE_SECONDS: u64 = 3 * 24 * 60 * 60;
-const MAX_IMAGE_BYTES: &str = "4000000";
+// A 480 px thumbnail is far smaller; the cache lives on tmpfs.
+const MAX_IMAGE_BYTES: &str = "1500000";
 // Thumbnails come only from Slack's own file host.
 const IMAGE_URL_PREFIX: &str = "https://files.slack.com/";
 // A thumbnail that failed (e.g. files:read missing) is retried after this.
@@ -58,7 +61,11 @@ struct Identity {
 
 #[derive(Debug, Default)]
 struct SlackCache {
+    /// Hash of the token the rest of the cache belongs to.
+    token_hash: Option<u64>,
     identity: Option<Identity>,
+    /// Last good copy of each channel, kept through a failed refresh.
+    channels: HashMap<String, SlackChannel>,
     channel_ids: HashMap<String, String>,
     channel_ids_at: Option<Instant>,
     user_names: HashMap<String, String>,
@@ -124,6 +131,19 @@ impl SlackClient {
             token: &token,
         };
         let mut cache = self.cache.lock().await;
+        let token_hash = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            token.hash(&mut hasher);
+            hasher.finish()
+        };
+        if cache.token_hash != Some(token_hash) {
+            // Another token may be another user or workspace entirely.
+            *cache = SlackCache {
+                token_hash: Some(token_hash),
+                ..SlackCache::default()
+            };
+        }
         let identity = match self.identity(&api, &mut cache).await {
             Ok(identity) => identity,
             Err(error) => {
@@ -137,15 +157,37 @@ impl SlackClient {
             tracing::debug!(%error, "Slack channel directory unavailable");
         }
         for name in &self.config.channels {
-            let channel = match cache.channel_ids.get(name).cloned() {
+            let fresh = match cache.channel_ids.get(name).cloned() {
                 Some(id) => self
                     .channel(&api, &mut cache, &identity, name, &id, &mut sample.urls)
                     .await
-                    .unwrap_or_else(|error| {
+                    .map_err(|error| {
                         tracing::debug!(%error, channel = %name, "Slack channel unavailable");
-                        unavailable_channel(name)
-                    }),
-                None => unavailable_channel(name),
+                    })
+                    .ok(),
+                None => None,
+            };
+            let channel = match fresh {
+                Some(channel) => {
+                    cache.channels.insert(name.clone(), channel.clone());
+                    channel
+                }
+                // A failed refresh keeps the last good copy, so its messages
+                // and cached thumbnails do not vanish for one tick.
+                None => match cache.channels.get(name) {
+                    Some(previous) => {
+                        for message in &previous.messages {
+                            if let Some((channel_id, ts)) = message.id.split_once('-') {
+                                sample.urls.insert(
+                                    message.id.clone(),
+                                    deep_link(&identity, channel_id, ts),
+                                );
+                            }
+                        }
+                        previous.clone()
+                    }
+                    None => unavailable_channel(name),
+                },
             };
             sample.snapshot.channels.push(channel);
         }
@@ -159,6 +201,9 @@ impl SlackClient {
             Ok(mentions) => notifications.extend(mentions),
             Err(error) => tracing::debug!(%error, "Slack mention search failed"),
         }
+        // A DM's latest message can also be a mention of you; show it once.
+        let mut seen = std::collections::HashSet::new();
+        notifications.retain(|notification| seen.insert(notification.id.clone()));
         notifications.truncate(MAX_NOTIFICATIONS);
         self.prune_images(&sample.snapshot.channels);
         for notification in &notifications {
@@ -344,7 +389,14 @@ impl SlackClient {
         let start = cache.dm_cursor % dms.len();
         for offset in 0..DM_CHECKS_PER_SAMPLE.min(dms.len()) {
             let (dm, user) = &dms[(start + offset) % dms.len()];
-            let info = api.call("conversations.info", &[("channel", dm)]).await?;
+            let info = match api.call("conversations.info", &[("channel", dm)]).await {
+                Ok(info) => info,
+                Err(error) => {
+                    // One failing DM (or a rate limit) must not stall the rest.
+                    tracing::debug!(%error, dm = %dm, "Slack DM check failed");
+                    continue;
+                }
+            };
             let channel = &info["channel"];
             let unread = channel["unread_count_display"].as_u64().unwrap_or(0);
             cache
@@ -617,11 +669,16 @@ impl Api<'_> {
             .join("&");
         // curl reads its URL and the Authorization header from a config on
         // stdin, so the token never appears in the process list.
+        let url = format!("{API_BASE}{method}?{query}");
+        if !is_config_safe(&url) {
+            bail!("refusing an unsafe Slack request URL");
+        }
         let config = format!(
-            "url = \"{API_BASE}{method}?{query}\"\nheader = \"Authorization: Bearer {}\"\n",
+            "url = \"{url}\"\nheader = \"Authorization: Bearer {}\"\n",
             self.token
         );
         let mut child = Command::new(self.curl_bin)
+            .kill_on_drop(true)
             .args([
                 "--silent",
                 "--show-error",
@@ -664,12 +721,18 @@ impl Api<'_> {
         fs::create_dir_all(directory)
             .with_context(|| format!("creating {}", directory.display()))?;
         let partial = directory.join(format!(".{name}.part"));
+        // Every value becomes one quoted line of curl's config; a quote,
+        // backslash, or newline from Slack's data must not add another line.
+        let output = partial.display().to_string();
+        if !is_config_safe(url) || !is_config_safe(&output) {
+            bail!("refusing an unsafe Slack thumbnail URL or cache path");
+        }
         let config = format!(
             "url = \"{url}\"\nheader = \"Authorization: Bearer {}\"\noutput = \"{}\"\n",
-            self.token,
-            partial.display()
+            self.token, output
         );
         let mut child = Command::new(self.curl_bin)
+            .kill_on_drop(true)
             .args([
                 "--silent",
                 "--max-time",
@@ -781,6 +844,15 @@ fn emojify(text: &str) -> String {
     }
     out.push_str(rest);
     out
+}
+
+/// Printable ASCII without quote, backslash, or space: safe inside a quoted
+/// curl config value.
+fn is_config_safe(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| (0x21..=0x7e).contains(&byte) && byte != b'"' && byte != b'\\')
 }
 
 fn image_extension(url: &str) -> Option<&'static str> {
@@ -1033,6 +1105,22 @@ esac
                 ("👋".to_owned(), 2)
             ]
         );
+    }
+
+    #[test]
+    fn curl_config_values_cannot_break_out_of_their_line() {
+        assert!(is_config_safe(
+            "https://files.slack.com/files-tmb/T-F1/x_480.png"
+        ));
+        for value in [
+            "",
+            "https://files.slack.com/a\"\nurl = \"https://evil",
+            "https://files.slack.com/a\nheader = x",
+            "https://files.slack.com/a\\b",
+            "https://files.slack.com/a b",
+        ] {
+            assert!(!is_config_safe(value), "{value:?}");
+        }
     }
 
     #[test]

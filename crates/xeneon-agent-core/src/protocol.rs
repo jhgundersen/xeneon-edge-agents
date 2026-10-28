@@ -44,9 +44,7 @@ pub fn validate_command(command: &PortalCommand) -> Result<(), CommandError> {
     }
 
     match (command.action, command.item_id.as_deref()) {
-        (ActionKind::BasecampOpen, Some(id))
-            if !id.is_empty() && id.len() <= 20 && id.bytes().all(|byte| byte.is_ascii_digit()) => {
-        }
+        (ActionKind::BasecampOpen, Some(id)) if is_basecamp_item_id(id) => {}
         (ActionKind::BasecampOpen, _) => return Err(CommandError::MissingItemId),
         (ActionKind::SlackOpen, Some(id)) if is_slack_item_id(id) => {}
         (ActionKind::SlackOpen, _) => return Err(CommandError::MissingItemId),
@@ -98,6 +96,16 @@ pub fn validate_command(command: &PortalCommand) -> Result<(), CommandError> {
     }
 
     Ok(())
+}
+
+/// Basecamp items are `n<notification id>` or `c<card id>`.
+fn is_basecamp_item_id(id: &str) -> bool {
+    match id.split_at_checked(1) {
+        Some(("n" | "c", number)) => {
+            (1..=19).contains(&number.len()) && number.bytes().all(|byte| byte.is_ascii_digit())
+        }
+        _ => false,
+    }
 }
 
 /// GitHub items are `p<pull request id>` or `n<notification id>`.
@@ -215,15 +223,15 @@ mod tests {
     }
 
     #[test]
-    fn basecamp_open_takes_only_a_numeric_item_id() {
+    fn basecamp_open_takes_only_a_prefixed_numeric_item_id() {
         let mut command = command(ActionKind::BasecampOpen);
         command.agent_id = None;
         assert_eq!(validate_command(&command), Err(CommandError::MissingItemId));
-        for bad in ["", "12a", "../1", "123456789012345678901"] {
+        for bad in ["", "12", "n12a", "x12", "c../1", "c12345678901234567890"] {
             command.item_id = Some(bad.into());
             assert_eq!(validate_command(&command), Err(CommandError::MissingItemId));
         }
-        command.item_id = Some("9711341101".into());
+        command.item_id = Some("c9711341101".into());
         assert_eq!(validate_command(&command), Ok(()));
 
         let mut other = command.clone();

@@ -174,7 +174,7 @@
         }
       }
     },
-    "basecampId": { "type": "string", "pattern": "^[0-9]{1,20}$" },
+    "basecampId": { "type": "string", "pattern": "^[nc][0-9]{1,19}$" },
     "basecamp": {
       "type": "object",
       "required": ["available"],

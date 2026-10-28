@@ -415,7 +415,7 @@ TestCase {
             var cards = []
             for (var index = 0; index < count; index += 1)
                 cards.push({
-                    "id": String(100 + index), "title": title + " card " + index,
+                    "id": "c" + (100 + index), "title": title + " card " + index,
                     "assignees": ["Kari Nordmann"], "due_on": "", "comments": 1
                 })
             return {"title": title, "color": color, "total": count + 3, "cards": cards}
@@ -423,7 +423,7 @@ TestCase {
         return {
             "available": true, "unread_count": 30, "unreads_capped": false,
             "notifications": [{
-                "id": "555", "kind": "comment", "title": "Re: Plan",
+                "id": "n555", "kind": "comment", "title": "Re: Plan",
                 "project": "Produkt", "creator": "Ola",
                 "unread_at": new Date(Date.now() - 2 * 3600000).toISOString()
             }],
@@ -454,7 +454,7 @@ TestCase {
         verify(card.activate())
         var item = findChild(portal, "basecampNotification_0")
         verify(item.activate())
-        compare(mockBridge.basecampOpens, ["101", "555"])
+        compare(mockBridge.basecampOpens, ["c101", "n555"])
 
         var view = findChild(portal, "basecampDashboard")
         verify(findChild(portal, "basecampBoardTab_1").activate())

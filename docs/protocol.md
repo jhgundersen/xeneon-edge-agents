@@ -158,7 +158,7 @@ The only actions are:
   the Spotify desktop client. They are refused unless `spotify` is listed in
   the snapshot's `dashboards`.
 - `basecamp_open`: takes no agent, capability, or `app_id` and requires
-  `item_id`, a numeric id of a notification or card in the current
+  `item_id`, `n<id>` for a notification or `c<id>` for a card in the current
   `basecamp` snapshot. Snapshots never carry URLs; the daemon looks the id up
   in its own last Basecamp sample and opens only `app.basecamp.com` or
   `3.basecamp.com` links in the default browser. `item_id` is rejected on

@@ -370,7 +370,7 @@ QtObject {
         var kinds = ["comment", "announcement", "done", "boost", "update"]
         function itemId(id) {
             var text = safeString(id, "", 20)
-            return /^[0-9]{1,20}$/.test(text) ? text : ""
+            return /^[nc][0-9]{1,19}$/.test(text) ? text : ""
         }
         function count(number) {
             return Math.max(0, Math.floor(finiteNumber(number, 0)))

@@ -218,6 +218,7 @@ impl GithubClient {
     async fn run(&self, token: Option<&str>, args: &[&str]) -> Result<Vec<u8>> {
         let mut command = Command::new(&self.config.bin);
         command
+            .kill_on_drop(true)
             .args(args)
             .env("GH_PROMPT_DISABLED", "1")
             .env("NO_COLOR", "1")
