@@ -170,6 +170,10 @@ The only actions are:
   opens in the Slack desktop app. Message images are thumbnails the daemon
   downloads with the token into `$XDG_RUNTIME_DIR/xeneon-edge-agents/slack-images`
   (needs the `files:read` scope); the snapshot names only the bare file.
+- `github_open`: takes no agent, capability, or `app_id` and requires
+  `item_id`, `p<id>` for a pull request or `n<id>` for a notification in the
+  current `github` snapshot. Snapshots never carry URLs or tokens; the daemon
+  opens only the `https://github.com/` page it recorded for that id.
 - `desktop_app`: takes no agent or capability and requires `app_id`, one of
   the ids in the snapshot's `desktop_apps` (0-4 entries from the daemon's
   `desktop-apps.toml` or `[[desktop.apps]]` configuration). The daemon focuses the single exact

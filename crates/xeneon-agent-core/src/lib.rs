@@ -1,6 +1,7 @@
 pub mod basecamp;
 pub mod config;
 pub mod desktop;
+pub mod github;
 pub mod health;
 pub mod herdr;
 pub mod micro;

@@ -24,6 +24,7 @@ TestCase {
         property var spotify: ({"available": false})
         property var basecamp: ({"available": false})
         property var slack: ({"available": false})
+        property var github: ({"available": false})
         property var sessions: []
         property var usage: ({"providers": []})
         property var micro: ({"connected": false, "charging": false})
@@ -65,6 +66,11 @@ TestCase {
         property var spotifyCommands: []
         property var basecampOpens: []
         property var slackOpens: []
+        property var githubOpens: []
+        function openGithubItem(itemId) {
+            githubOpens = githubOpens.concat([itemId])
+            return "go"
+        }
         function openSlackItem(itemId) {
             slackOpens = slackOpens.concat([itemId])
             return "so"
@@ -172,6 +178,8 @@ TestCase {
         mockStore.basecamp = {"available": false}
         mockStore.slack = {"available": false}
         mockBridge.slackOpens = []
+        mockStore.github = {"available": false}
+        mockBridge.githubOpens = []
         mockStore.dashboards = ["agents"]
         mockStore.spotify = {"available": false}
         mockPreferences.dashboard = "agents"
@@ -501,6 +509,35 @@ TestCase {
         verify(findChild(portal, "slackChannelTab_1").activate())
         compare(view.channelIndex, 1)
         compare(view.messages.length, 0)
+    }
+
+    function test_githubDashboardShowsPullRequestsAndNotificationsAndOpensById() {
+        mockStore.dashboards = ["agents", "github"]
+        mockPreferences.dashboard = "github"
+        var now = Math.floor(Date.now() / 1000)
+        mockStore.github = {
+            "available": true, "organization": "favo",
+            "open_pull_requests": 44,
+            "pull_requests": [
+                {"id": "p9001", "repo": "app", "number": 42, "title": "Fix login",
+                 "author": "kari", "draft": false, "comments": 3, "at": now - 300},
+                {"id": "p9002", "repo": "web", "number": 7, "title": "WIP header",
+                 "author": "ola", "draft": true, "comments": 0, "at": now - 7200}
+            ],
+            "notifications": [
+                {"id": "n123", "kind": "pr", "title": "Fix login", "repo": "favo/app",
+                 "reason": "review_requested", "at": now - 600}
+            ]
+        }
+        wait(0)
+        verify(findChild(portal, "dashboardTitle").text.indexOf("// GITHUB") > 0)
+        compare(findChild(portal, "dashboardTab_github").detail, "1 UNREAD")
+        compare(findChild(portal, "githubFeedTitle").text, "FAVO  //  44 OPEN PULL REQUESTS")
+        compare(findChild(portal, "githubInboxTitle").text, "GITHUB  //  1 UNREAD")
+        compare(findChild(portal, "githubPullRequests").count, 2)
+        verify(findChild(portal, "githubPullRequest_0").activate())
+        verify(findChild(portal, "githubNotification_0").activate())
+        compare(mockBridge.githubOpens, ["p9001", "n123"])
     }
 
     function test_priorityOrderKeepsTheFlatGrid() {

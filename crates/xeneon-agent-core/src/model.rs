@@ -79,6 +79,7 @@ pub enum ActionKind {
     SpotifyPrevious,
     BasecampOpen,
     SlackOpen,
+    GithubOpen,
     VoiceStart,
     VoiceStop,
     VoiceCancel,
@@ -97,6 +98,7 @@ pub enum DashboardKind {
     Spotify,
     Basecamp,
     Slack,
+    Github,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -256,6 +258,47 @@ pub struct SlackSnapshot {
     pub available: bool,
     pub channels: Vec<SlackChannel>,
     pub notifications: Vec<SlackNotification>,
+}
+
+/// An open pull request in the followed organization. Its URL stays in the
+/// daemon; the portal opens it by `id` with `github_open`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GithubPullRequest {
+    pub id: String,
+    /// Repository name without the organization.
+    pub repo: String,
+    pub number: u32,
+    pub title: String,
+    pub author: String,
+    pub draft: bool,
+    pub comments: u32,
+    /// Last update, Unix seconds.
+    pub at: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GithubNotification {
+    pub id: String,
+    /// `pr`, `issue`, `release`, `commit`, `ci`, `discussion`, or `other`.
+    pub kind: String,
+    pub title: String,
+    /// `owner/name`.
+    pub repo: String,
+    /// GitHub's reason, e.g. `review_requested` or `mention`.
+    pub reason: String,
+    pub at: u64,
+}
+
+/// Open organization pull requests and the user's unread GitHub
+/// notifications, read through the signed-in `gh` CLI.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GithubSnapshot {
+    pub available: bool,
+    pub organization: String,
+    /// Open pull requests in the organization, most recently updated first.
+    pub open_pull_requests: u32,
+    pub pull_requests: Vec<GithubPullRequest>,
+    pub notifications: Vec<GithubNotification>,
 }
 
 /// Which agent manager the daemon observes and routes agent actions to.
@@ -519,6 +562,9 @@ pub struct PortalSnapshot {
     /// Populated only while the Slack dashboard is enabled.
     #[serde(default)]
     pub slack: SlackSnapshot,
+    /// Populated only while the GitHub dashboard is enabled.
+    #[serde(default)]
+    pub github: GithubSnapshot,
     pub voice: VoiceSnapshot,
     pub usage: AiUsageSnapshot,
     pub micro: MicroSnapshot,
@@ -549,6 +595,7 @@ impl PortalSnapshot {
             spotify: SpotifySnapshot::default(),
             basecamp: BasecampSnapshot::default(),
             slack: SlackSnapshot::default(),
+            github: GithubSnapshot::default(),
             voice: VoiceSnapshot::default(),
             usage: AiUsageSnapshot::default(),
             micro: MicroSnapshot::default(),

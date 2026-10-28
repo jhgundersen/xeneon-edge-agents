@@ -37,6 +37,7 @@ QtObject {
     property var spotify: ({"available": false})
     property var basecamp: ({"available": false})
     property var slack: ({"available": false})
+    property var github: ({"available": false})
     property var health: ({})
     property var voice: ({
         "available": false,
@@ -121,6 +122,7 @@ QtObject {
         spotify = {"available": false}
         basecamp = {"available": false}
         slack = {"available": false}
+        github = {"available": false}
         health = {}
         voice = {
             "available": false,
@@ -318,7 +320,7 @@ QtObject {
     }
 
     function normalizeDashboards(value) {
-        var known = ["agents", "spotify", "basecamp", "slack"]
+        var known = ["agents", "spotify", "basecamp", "slack", "github"]
         var result = []
         if (Array.isArray(value)) {
             for (var index = 0; index < value.length; index += 1) {
@@ -531,6 +533,65 @@ QtObject {
         return {
             "available": true,
             "channels": channels,
+            "notifications": notifications
+        }
+    }
+
+    // GitHub items carry no URLs; ids are `p<number>` or `n<number>` and only
+    // ever sent back to the daemon, which owns the links.
+    function normalizeGithub(value) {
+        if (value === null || typeof value !== "object" || value.available !== true)
+            return {"available": false}
+        function itemId(id) {
+            var text = safeString(id, "", 41)
+            return /^[pn][0-9]{1,20}$/.test(text) ? text : ""
+        }
+        function count(number) {
+            return Math.max(0, Math.floor(finiteNumber(number, 0)))
+        }
+        var pulls = []
+        var sourcePulls = Array.isArray(value.pull_requests) ? value.pull_requests : []
+        for (var p = 0; p < sourcePulls.length && p < 30; p += 1) {
+            var pull = sourcePulls[p] || {}
+            var pullId = itemId(pull.id)
+            if (pullId === "" || pullId[0] !== "p")
+                continue
+            pulls.push({
+                "id": pullId,
+                "repo": safeString(pull.repo, "", 64),
+                "number": count(pull.number),
+                "title": safeString(pull.title, "", 160),
+                "author": safeString(pull.author, "", 64),
+                "draft": pull.draft === true,
+                "comments": count(pull.comments),
+                "at": count(pull.at)
+            })
+        }
+        var kinds = ["pr", "issue", "release", "commit", "ci", "discussion", "other"]
+        var notifications = []
+        var sourceNotifications = Array.isArray(value.notifications)
+            ? value.notifications
+            : []
+        for (var n = 0; n < sourceNotifications.length && n < 12; n += 1) {
+            var item = sourceNotifications[n] || {}
+            var notificationId = itemId(item.id)
+            if (notificationId === "" || notificationId[0] !== "n")
+                continue
+            var kind = safeString(item.kind, "other", 16)
+            notifications.push({
+                "id": notificationId,
+                "kind": kinds.indexOf(kind) === -1 ? "other" : kind,
+                "title": safeString(item.title, "", 160),
+                "repo": safeString(item.repo, "", 128),
+                "reason": safeString(item.reason, "", 32),
+                "at": count(item.at)
+            })
+        }
+        return {
+            "available": true,
+            "organization": safeString(value.organization, "", 39),
+            "open_pull_requests": count(value.open_pull_requests),
+            "pull_requests": pulls,
             "notifications": notifications
         }
     }
@@ -992,6 +1053,7 @@ QtObject {
         spotify = normalizeSpotify(snapshot.spotify)
         basecamp = normalizeBasecamp(snapshot.basecamp)
         slack = normalizeSlack(snapshot.slack)
+        github = normalizeGithub(snapshot.github)
         var nextSignature = semanticSignature(
             nextConnection,
             nextAgents,

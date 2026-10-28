@@ -28,6 +28,7 @@
         "spotify_previous",
         "basecamp_open",
         "slack_open",
+        "github_open",
         "voice_start",
         "voice_stop",
         "voice_cancel",
@@ -48,7 +49,51 @@
         "switchable": { "type": "boolean" }
       }
     },
-    "dashboard": { "enum": ["agents", "spotify", "basecamp", "slack"] },
+    "dashboard": { "enum": ["agents", "spotify", "basecamp", "slack", "github"] },
+    "githubId": { "type": "string", "pattern": "^[pn][0-9]{1,20}$" },
+    "github": {
+      "type": "object",
+      "required": ["available"],
+      "properties": {
+        "available": { "type": "boolean" },
+        "organization": { "type": "string", "maxLength": 39 },
+        "open_pull_requests": { "type": "integer", "minimum": 0 },
+        "pull_requests": {
+          "type": "array",
+          "maxItems": 30,
+          "items": {
+            "type": "object",
+            "required": ["id", "repo", "number", "title", "author", "draft", "comments", "at"],
+            "properties": {
+              "id": { "$ref": "#/$defs/githubId" },
+              "repo": { "type": "string", "maxLength": 64 },
+              "number": { "type": "integer", "minimum": 0 },
+              "title": { "type": "string", "maxLength": 160 },
+              "author": { "type": "string", "maxLength": 64 },
+              "draft": { "type": "boolean" },
+              "comments": { "type": "integer", "minimum": 0 },
+              "at": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+        "notifications": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "required": ["id", "kind", "title", "repo", "reason", "at"],
+            "properties": {
+              "id": { "$ref": "#/$defs/githubId" },
+              "kind": { "enum": ["pr", "issue", "release", "commit", "ci", "discussion", "other"] },
+              "title": { "type": "string", "maxLength": 160 },
+              "repo": { "type": "string", "maxLength": 128 },
+              "reason": { "type": "string", "maxLength": 32 },
+              "at": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
     "slackId": { "type": "string", "pattern": "^[A-Z0-9]{1,24}-[0-9]{1,12}\\.[0-9]{1,8}$" },
     "slack": {
       "type": "object",
@@ -475,6 +520,7 @@
         "spotify": { "$ref": "#/$defs/spotify" },
         "basecamp": { "$ref": "#/$defs/basecamp" },
         "slack": { "$ref": "#/$defs/slack" },
+        "github": { "$ref": "#/$defs/github" },
         "desktop_apps": {
           "type": "array",
           "maxItems": 4,
@@ -537,7 +583,8 @@
         "item_id": {
           "oneOf": [
             { "$ref": "#/$defs/basecampId" },
-            { "$ref": "#/$defs/slackId" }
+            { "$ref": "#/$defs/slackId" },
+            { "$ref": "#/$defs/githubId" }
           ]
         }
       }

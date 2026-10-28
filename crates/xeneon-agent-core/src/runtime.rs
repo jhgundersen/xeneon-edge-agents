@@ -22,6 +22,7 @@ use crate::{
     Config,
     basecamp::{BasecampClient, is_basecamp_url},
     desktop::{DesktopApp, DesktopAppOutcome, DesktopController},
+    github::{GithubClient, is_github_url},
     health::HealthCollector,
     herdr::{HerdrClient, HerdrTarget, SessionDescriptor},
     micro::MicroCollector,
@@ -44,6 +45,7 @@ const SPOTIFY_REFRESH: Duration = Duration::from_millis(1_000);
 const SPOTIFY_POSITION_TOLERANCE_MS: u64 = 1_500;
 const BASECAMP_REFRESH: Duration = Duration::from_secs(60);
 const SLACK_REFRESH: Duration = Duration::from_secs(30);
+const GITHUB_REFRESH: Duration = Duration::from_secs(120);
 const BACKEND_STATE_FILE_NAME: &str = "xeneon-edge-agents/agent-backend.toml";
 /// Invalidation key used when the portal switches agent managers.
 const BACKEND_SWITCH_INVALIDATION: &str = "\0backend";
@@ -147,6 +149,8 @@ struct RuntimeState {
     /// `slack://` deep links of published Slack messages by id; never sent to
     /// the portal.
     slack_urls: HashMap<String, String>,
+    /// github.com pages of published commits and notifications by id.
+    github_urls: HashMap<String, String>,
     t3code_sequence: Option<u64>,
     targets: HashMap<String, AgentTarget>,
     observed: HashMap<String, ObservedAgent>,
@@ -180,6 +184,7 @@ pub struct DaemonRuntime {
     spotify: SpotifyClient,
     basecamp: BasecampClient,
     slack: SlackClient,
+    github: GithubClient,
     voice: Arc<Mutex<VoiceController>>,
     order_operation: Arc<Mutex<()>>,
     updates: watch::Sender<String>,
@@ -233,6 +238,7 @@ impl DaemonRuntime {
         let t3code = T3codeClient::from_config(config.t3code.home.as_deref())?;
         let basecamp = BasecampClient::new(config.basecamp.clone());
         let slack = SlackClient::new(config.slack.clone());
+        let github = GithubClient::new(config.github.clone());
         Ok((
             Self {
                 herdr: HerdrClient::new(config.herdr_bin.clone()),
@@ -247,6 +253,7 @@ impl DaemonRuntime {
                     herdr_order_daemon_owned: false,
                     basecamp_urls: HashMap::new(),
                     slack_urls: HashMap::new(),
+                    github_urls: HashMap::new(),
                     t3code_sequence: None,
                     targets: HashMap::new(),
                     observed: HashMap::new(),
@@ -258,6 +265,7 @@ impl DaemonRuntime {
                 spotify: SpotifyClient::default(),
                 basecamp,
                 slack,
+                github,
                 voice: Arc::new(Mutex::new(voice)),
                 order_operation: Arc::new(Mutex::new(())),
                 updates,
@@ -324,6 +332,9 @@ impl DaemonRuntime {
         let slack_enabled = self.config.dashboards.contains(&DashboardKind::Slack);
         let mut slack_tick = interval(SLACK_REFRESH);
         slack_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        let github_enabled = self.config.dashboards.contains(&DashboardKind::Github);
+        let mut github_tick = interval(GITHUB_REFRESH);
+        github_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut spotify_tick = interval(SPOTIFY_REFRESH);
         let mut spotify_published_at = Instant::now();
         spotify_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -380,6 +391,17 @@ impl DaemonRuntime {
                     state.slack_urls = sample.urls;
                     if state.snapshot.slack != sample.snapshot {
                         state.snapshot.slack = sample.snapshot;
+                        state.snapshot.generated_at_ms = now_ms();
+                        drop(state);
+                        self.publish().await;
+                    }
+                }
+                _ = github_tick.tick(), if github_enabled => {
+                    let sample = self.github.sample().await;
+                    let mut state = self.state.write().await;
+                    state.github_urls = sample.urls;
+                    if state.snapshot.github != sample.snapshot {
+                        state.snapshot.github = sample.snapshot;
                         state.snapshot.generated_at_ms = now_ms();
                         drop(state);
                         self.publish().await;
@@ -933,6 +955,41 @@ impl DaemonRuntime {
             };
         }
 
+        if command.action == ActionKind::GithubOpen {
+            let url = {
+                let state = self.state.read().await;
+                command
+                    .item_id
+                    .as_deref()
+                    .and_then(|id| state.github_urls.get(id).cloned())
+            };
+            let Some(url) = url.filter(|url| is_github_url(url)) else {
+                return action_error(
+                    &command.request_id,
+                    "target_unavailable",
+                    "GitHub item is no longer on the dashboard",
+                );
+            };
+            if !self.config.dashboards.contains(&DashboardKind::Github) {
+                return action_error(
+                    &command.request_id,
+                    "target_unavailable",
+                    "the GitHub dashboard is not enabled",
+                );
+            }
+            return match self.desktop.open_url(&url).await {
+                Ok(()) => action_ok(&command.request_id, "github_item_opened"),
+                Err(error) => {
+                    tracing::warn!(%error, "GitHub item open failed");
+                    action_error(
+                        &command.request_id,
+                        "target_unavailable",
+                        "GitHub item could not be opened",
+                    )
+                }
+            };
+        }
+
         if command.action == ActionKind::SlackOpen {
             // As with Basecamp, the daemon resolves the link itself; it opens
             // only validated deep links, in the Slack desktop app.
@@ -1110,6 +1167,7 @@ impl DaemonRuntime {
             | ActionKind::SpotifyPrevious
             | ActionKind::BasecampOpen
             | ActionKind::SlackOpen
+            | ActionKind::GithubOpen
             | ActionKind::VoiceStart
             | ActionKind::VoiceStop
             | ActionKind::VoiceCancel

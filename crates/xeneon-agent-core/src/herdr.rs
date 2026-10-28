@@ -392,7 +392,8 @@ impl HerdrClient {
             | ActionKind::SpotifyNext
             | ActionKind::SpotifyPrevious
             | ActionKind::BasecampOpen
-            | ActionKind::SlackOpen => {
+            | ActionKind::SlackOpen
+            | ActionKind::GithubOpen => {
                 bail!("action is owned by the desktop adapter")
             }
             ActionKind::VoiceStart | ActionKind::VoiceStop | ActionKind::VoiceCancel => {

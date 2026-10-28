@@ -50,6 +50,8 @@ pub fn validate_command(command: &PortalCommand) -> Result<(), CommandError> {
         (ActionKind::BasecampOpen, _) => return Err(CommandError::MissingItemId),
         (ActionKind::SlackOpen, Some(id)) if is_slack_item_id(id) => {}
         (ActionKind::SlackOpen, _) => return Err(CommandError::MissingItemId),
+        (ActionKind::GithubOpen, Some(id)) if is_github_item_id(id) => {}
+        (ActionKind::GithubOpen, _) => return Err(CommandError::MissingItemId),
         (_, None) => {}
         (_, Some(_)) => return Err(CommandError::UnexpectedItemId),
     }
@@ -62,6 +64,7 @@ pub fn validate_command(command: &PortalCommand) -> Result<(), CommandError> {
         | ActionKind::SpotifyPrevious
         | ActionKind::BasecampOpen
         | ActionKind::SlackOpen
+        | ActionKind::GithubOpen
         | ActionKind::VoiceStart
         | ActionKind::VoiceStop
         | ActionKind::VoiceCancel
@@ -95,6 +98,16 @@ pub fn validate_command(command: &PortalCommand) -> Result<(), CommandError> {
     }
 
     Ok(())
+}
+
+/// GitHub items are `p<pull request id>` or `n<notification id>`.
+fn is_github_item_id(id: &str) -> bool {
+    match id.split_at_checked(1) {
+        Some(("p" | "n", number)) => {
+            (1..=20).contains(&number.len()) && number.bytes().all(|byte| byte.is_ascii_digit())
+        }
+        _ => false,
+    }
 }
 
 /// Slack items are `<conversation id>-<message ts>`, e.g. `C123-1700000000.000100`.
@@ -236,6 +249,24 @@ mod tests {
         }
         command.item_id = Some("CDEV1-1700000200.000300".into());
         assert_eq!(validate_command(&command), Ok(()));
+    }
+
+    #[test]
+    fn github_open_takes_only_a_commit_or_notification_id() {
+        let mut command = command(ActionKind::GithubOpen);
+        command.agent_id = None;
+        for bad in ["", "caaaaaaa1", "p", "n12a", "x123", "p123 ", "p-1"] {
+            command.item_id = Some(bad.into());
+            assert_eq!(
+                validate_command(&command),
+                Err(CommandError::MissingItemId),
+                "{bad}"
+            );
+        }
+        for good in ["p9001", "n123"] {
+            command.item_id = Some(good.into());
+            assert_eq!(validate_command(&command), Ok(()));
+        }
     }
 
     #[test]

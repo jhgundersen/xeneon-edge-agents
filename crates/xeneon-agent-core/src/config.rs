@@ -31,6 +31,7 @@ pub struct Config {
     pub dashboards: Vec<DashboardKind>,
     pub basecamp: BasecampConfig,
     pub slack: SlackConfig,
+    pub github: GithubConfig,
     pub t3code: T3codeConfig,
 }
 
@@ -88,6 +89,40 @@ struct DashboardsFile {
     basecamp: Option<BasecampConfig>,
     #[serde(default)]
     slack: Option<SlackConfig>,
+    #[serde(default)]
+    github: Option<GithubConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct GithubConfig {
+    /// The GitHub CLI, already signed in by the user.
+    pub bin: PathBuf,
+    /// Organization whose recently pushed repositories feed the commit list.
+    pub organization: String,
+    /// `gh` account to read as (`gh auth status`); the active one when unset.
+    pub user: Option<String>,
+}
+
+impl Default for GithubConfig {
+    fn default() -> Self {
+        Self {
+            bin: PathBuf::from("gh"),
+            organization: String::new(),
+            user: None,
+        }
+    }
+}
+
+/// GitHub logins and organization names: letters, digits, single hyphens.
+fn is_github_name(name: &str) -> bool {
+    (1..=39).contains(&name.len())
+        && !name.starts_with('-')
+        && !name.ends_with('-')
+        && !name.contains("--")
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
 }
 
 pub const MAX_SLACK_CHANNELS: usize = 6;
@@ -253,6 +288,7 @@ impl Default for Config {
             dashboards: vec![DashboardKind::Agents],
             basecamp: BasecampConfig::default(),
             slack: SlackConfig::default(),
+            github: GithubConfig::default(),
             t3code: T3codeConfig::default(),
         }
     }
@@ -320,6 +356,9 @@ impl Config {
                         .map(|directory| directory.join(SLACK_TOKEN_FILE_NAME));
                 }
                 config.slack = slack;
+            }
+            if let Some(github) = file.github {
+                config.github = github;
             }
         }
         config.apply_runtime_output(runtime_output)?;
@@ -428,6 +467,22 @@ impl Config {
             if label.is_empty() || label.chars().count() > 24 {
                 anyhow::bail!("basecamp.card_tables labels must be 1-24 characters");
             }
+        }
+        if self.dashboards.contains(&DashboardKind::Github)
+            && !is_github_name(&self.github.organization)
+        {
+            anyhow::bail!("the github dashboard needs [github] organization = \"<org>\"");
+        }
+        if self.github.bin.as_os_str().is_empty() {
+            anyhow::bail!("github.bin must not be empty");
+        }
+        if self
+            .github
+            .user
+            .as_deref()
+            .is_some_and(|user| !is_github_name(user))
+        {
+            anyhow::bail!("github.user must be a GitHub login");
         }
         if self.slack.channels.len() > MAX_SLACK_CHANNELS {
             anyhow::bail!("slack.channels allows at most {MAX_SLACK_CHANNELS} channels");

@@ -131,6 +131,9 @@ card or item opens it in the browser. A Slack dashboard shows recent messages
 from chosen channels next to your unread DMs and @-mentions, read with a
 read-only Slack app you create from `config/slack/app-manifest.yaml`; the
 user token stays in an owner-only `slack.toml` and never reaches the portal.
+A GitHub dashboard lists an organization's open pull requests next to your
+unread notifications, read through the signed-in `gh` CLI (optionally as a
+named `gh` account).
 The desktop apps the daemon may focus or launch are configured per machine in
 `~/.config/xeneon-edge-agents/desktop-apps.toml` (Spotify and Discord when the
 file is absent; see `config/xeneon-edge-agents/desktop-apps.toml.example`).

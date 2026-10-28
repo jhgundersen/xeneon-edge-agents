@@ -10,6 +10,8 @@
 #             the signed-in Basecamp CLI (`basecamp login`)
 #   slack     Recent messages in chosen channels plus your unread DMs and
 #             @-mentions, read with your own Slack user token (see below)
+#   github    Open pull requests across an organization plus your unread
+#             notifications, read through the signed-in GitHub CLI (gh)
 
 dashboards = ["agents", "basecamp", "spotify"]
 
@@ -33,3 +35,9 @@ card_table = 9711341101
 # Then add "slack" to `dashboards` and list the channels to show as tabs.
 # [slack]
 # channels = ["dev", "support"]
+
+# GitHub: name the organization and, if gh has several accounts, which one
+# to read as (`gh auth status`). Add "github" to `dashboards` to show it.
+# [github]
+# organization = "acme"
+# user = "my-work-login"
