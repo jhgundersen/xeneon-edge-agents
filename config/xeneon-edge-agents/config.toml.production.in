@@ -25,3 +25,29 @@ refresh_ms = 1000
 [desktop]
 edge_output = "@OUTPUT_CONNECTOR@"
 herdr_class = "herdr"
+
+# Header shortcuts: 0-4 apps, shown left to right. Leave every
+# [[desktop.apps]] entry out to keep the built-in Spotify and Discord pair,
+# or write `apps = []` under [desktop] for none. The portal can only name an
+# id from this list; launching and focusing are resolved here.
+#
+#   id          lowercase letters, digits, or "-" (sent back by the portal)
+#   label       button text, at most 16 characters
+#   desktop_id  bare desktop entry name, launched with `uwsm app`
+#   class       exact Hyprland window class (`hyprctl clients`)
+#   title       optional initial title preferred when several windows match
+#   accent      accent, green, blue, cyan, magenta, orange, or yellow
+#
+# [[desktop.apps]]
+# id = "spotify"
+# label = "Spotify"
+# desktop_id = "spotify.desktop"
+# class = "spotify"
+# accent = "green"
+#
+# [[desktop.apps]]
+# id = "slack"
+# label = "Slack"
+# desktop_id = "slack.desktop"
+# class = "Slack"
+# accent = "magenta"

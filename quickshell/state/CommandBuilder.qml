@@ -9,8 +9,7 @@ QtObject {
         "approve",
         "interrupt",
         "restore_focus",
-        "spotify_desktop",
-        "discord_desktop",
+        "desktop_app",
         "voice_start",
         "voice_stop",
         "voice_cancel",
@@ -28,7 +27,7 @@ QtObject {
         lastError = ""
     }
 
-    function build(action, agentId, capabilityId, pinnedSequence) {
+    function build(action, agentId, capabilityId, pinnedSequence, appId) {
         lastError = ""
 
         if (allowedActions.indexOf(action) === -1) {
@@ -38,6 +37,7 @@ QtObject {
 
         var normalizedAgentId = String(agentId || "")
         var normalizedCapabilityId = String(capabilityId || "")
+        var normalizedAppId = String(appId || "")
         var normalizedSequence = Number(pinnedSequence)
 
         if (!isFinite(normalizedSequence) || normalizedSequence < 0) {
@@ -46,8 +46,7 @@ QtObject {
         }
 
         var systemAction = action === "restore_focus"
-            || action === "spotify_desktop"
-            || action === "discord_desktop"
+            || action === "desktop_app"
             || action === "voice_start"
             || action === "voice_stop"
             || action === "voice_cancel"
@@ -79,6 +78,17 @@ QtObject {
             return null
         }
 
+        if (action === "desktop_app"
+                && !/^[a-z0-9-]{1,32}$/.test(normalizedAppId)) {
+            lastError = "Desktop app action requires a configured app_id"
+            return null
+        }
+
+        if (action !== "desktop_app" && normalizedAppId !== "") {
+            lastError = "Only desktop_app accepts an app_id"
+            return null
+        }
+
         requestCounter += 1
         var command = {
             "schema_version": 1,
@@ -93,6 +103,9 @@ QtObject {
 
         if (normalizedCapabilityId !== "")
             command.capability_id = normalizedCapabilityId
+
+        if (normalizedAppId !== "")
+            command.app_id = normalizedAppId
 
         return command
     }

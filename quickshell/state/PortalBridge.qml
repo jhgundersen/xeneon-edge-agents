@@ -84,7 +84,7 @@ QtObject {
         }
     }
 
-    function sendBuilt(action, agentId, capabilityId, pinnedSequence) {
+    function sendBuilt(action, agentId, capabilityId, pinnedSequence, appId) {
         if (store.freshSnapshotRequired) {
             commandRejected("Waiting for a fresh snapshot")
             return ""
@@ -94,7 +94,8 @@ QtObject {
             action,
             agentId,
             capabilityId,
-            pinnedSequence
+            pinnedSequence,
+            appId
         )
         if (command === null) {
             commandRejected(commandBuilder.lastError)
@@ -151,12 +152,8 @@ QtObject {
         return sendBuilt("restore_focus", "", "", sequence)
     }
 
-    function openSpotifyDesktop() {
-        return sendBuilt("spotify_desktop", "", "", store.sequence)
-    }
-
-    function openDiscordDesktop() {
-        return sendBuilt("discord_desktop", "", "", store.sequence)
+    function openDesktopApp(appId) {
+        return sendBuilt("desktop_app", "", "", store.sequence, appId)
     }
 
     function startVoice() {

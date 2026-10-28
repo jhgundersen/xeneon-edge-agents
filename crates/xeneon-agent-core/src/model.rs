@@ -73,8 +73,7 @@ pub enum ActionKind {
     Approve,
     Interrupt,
     RestoreFocus,
-    SpotifyDesktop,
-    DiscordDesktop,
+    DesktopApp,
     VoiceStart,
     VoiceStop,
     VoiceCancel,
@@ -330,10 +329,20 @@ pub struct PortalSnapshot {
     pub agent_order: AgentOrderSnapshot,
     #[serde(default)]
     pub backend: AgentBackendSnapshot,
+    /// Header shortcuts from the daemon's `desktop.apps` configuration.
+    #[serde(default)]
+    pub desktop_apps: Vec<DesktopAppView>,
     pub voice: VoiceSnapshot,
     pub usage: AiUsageSnapshot,
     pub micro: MicroSnapshot,
     pub health: HealthSnapshot,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DesktopAppView {
+    pub id: String,
+    pub label: String,
+    pub accent: String,
 }
 
 impl PortalSnapshot {
@@ -348,6 +357,7 @@ impl PortalSnapshot {
             agents: Vec::new(),
             agent_order: AgentOrderSnapshot::default(),
             backend: AgentBackendSnapshot::default(),
+            desktop_apps: Vec::new(),
             voice: VoiceSnapshot::default(),
             usage: AiUsageSnapshot::default(),
             micro: MicroSnapshot::default(),
@@ -367,6 +377,9 @@ pub struct PortalCommand {
     pub action: ActionKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capability_id: Option<String>,
+    /// Configured `desktop.apps` id; accepted only by `desktop_app`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

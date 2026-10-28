@@ -83,24 +83,22 @@ TestCase {
         }
     }
 
-    function test_desktopActionsAreFixedAndCannotTargetAgents() {
-        for (var index = 0; index < 2; index += 1) {
-            var action = [
-                "spotify_desktop",
-                "discord_desktop"
-            ][index]
-            var command = builder.build(action, "", "", 45)
-            verify(command !== null)
-            compare(command.action, action)
-            compare(command.agent_id, undefined)
-            compare(command.capability_id, undefined)
-            compare(command.desktop_id, undefined)
-            compare(builder.build(action, "agent-1", "", 45), null)
-            compare(
-                builder.build(action, "", "capability", 45),
-                null
-            )
-        }
+    function test_desktopActionsCarryOnlyAConfiguredAppId() {
+        var command = builder.build("desktop_app", "", "", 45, "spotify")
+        verify(command !== null)
+        compare(command.action, "desktop_app")
+        compare(command.app_id, "spotify")
+        compare(command.agent_id, undefined)
+        compare(command.capability_id, undefined)
+        compare(builder.build("desktop_app", "", "", 45), null)
+        compare(builder.build("desktop_app", "", "", 45, "Bad Id"), null)
+        compare(builder.build("desktop_app", "", "", 45, "../x"), null)
+        compare(builder.build("desktop_app", "agent-1", "", 45, "spotify"), null)
+        compare(
+            builder.build("desktop_app", "", "capability", 45, "spotify"),
+            null
+        )
+        compare(builder.build("voice_start", "", "", 45, "spotify"), null)
     }
 
     function test_orderActionsAreTypedAndCannotTargetAgents() {

@@ -16,6 +16,10 @@ pub enum CommandError {
     MissingCapability,
     #[error("capability_id is not accepted for this action")]
     UnexpectedCapability,
+    #[error("app_id is required for desktop_app")]
+    MissingAppId,
+    #[error("app_id is not accepted for this action")]
+    UnexpectedAppId,
 }
 
 pub fn validate_command(command: &PortalCommand) -> Result<(), CommandError> {
@@ -26,10 +30,18 @@ pub fn validate_command(command: &PortalCommand) -> Result<(), CommandError> {
         return Err(CommandError::MissingRequestId);
     }
 
+    match (command.action, command.app_id.as_deref()) {
+        (ActionKind::DesktopApp, None) => return Err(CommandError::MissingAppId),
+        (ActionKind::DesktopApp, Some(id)) if id.trim().is_empty() => {
+            return Err(CommandError::MissingAppId);
+        }
+        (ActionKind::DesktopApp, Some(_)) | (_, None) => {}
+        (_, Some(_)) => return Err(CommandError::UnexpectedAppId),
+    }
+
     match command.action {
         ActionKind::RestoreFocus
-        | ActionKind::SpotifyDesktop
-        | ActionKind::DiscordDesktop
+        | ActionKind::DesktopApp
         | ActionKind::VoiceStart
         | ActionKind::VoiceStop
         | ActionKind::VoiceCancel
@@ -91,6 +103,7 @@ mod tests {
             agent_id: Some("agent".into()),
             action,
             capability_id: None,
+            app_id: None,
         }
     }
 
@@ -127,20 +140,35 @@ mod tests {
 
     #[test]
     fn desktop_actions_are_typed_global_actions() {
-        for action in [ActionKind::SpotifyDesktop, ActionKind::DiscordDesktop] {
-            let mut command = command(action);
-            assert_eq!(
-                validate_command(&command),
-                Err(CommandError::UnexpectedAgentId)
-            );
-            command.agent_id = None;
-            assert_eq!(validate_command(&command), Ok(()));
-            command.capability_id = Some("not-accepted".into());
-            assert_eq!(
-                validate_command(&command),
-                Err(CommandError::UnexpectedCapability)
-            );
-        }
+        let mut command = command(ActionKind::DesktopApp);
+        command.agent_id = None;
+        assert_eq!(validate_command(&command), Err(CommandError::MissingAppId));
+        command.app_id = Some("  ".into());
+        assert_eq!(validate_command(&command), Err(CommandError::MissingAppId));
+        command.app_id = Some("spotify".into());
+        assert_eq!(validate_command(&command), Ok(()));
+        command.agent_id = Some("agent".into());
+        assert_eq!(
+            validate_command(&command),
+            Err(CommandError::UnexpectedAgentId)
+        );
+        command.agent_id = None;
+        command.capability_id = Some("not-accepted".into());
+        assert_eq!(
+            validate_command(&command),
+            Err(CommandError::UnexpectedCapability)
+        );
+    }
+
+    #[test]
+    fn app_id_is_rejected_outside_desktop_app() {
+        let mut command = command(ActionKind::VoiceStart);
+        command.agent_id = None;
+        command.app_id = Some("spotify".into());
+        assert_eq!(
+            validate_command(&command),
+            Err(CommandError::UnexpectedAppId)
+        );
     }
 
     #[test]

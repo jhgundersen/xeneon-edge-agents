@@ -386,7 +386,7 @@ impl HerdrClient {
                 let capability_id = capability_id.ok_or_else(|| anyhow!("missing capability"))?;
                 json!({"id": request_id(), "method": "agent.perform_action", "params": {"capability_id": capability_id}})
             }
-            ActionKind::RestoreFocus | ActionKind::SpotifyDesktop | ActionKind::DiscordDesktop => {
+            ActionKind::RestoreFocus | ActionKind::DesktopApp => {
                 bail!("action is owned by the desktop adapter")
             }
             ActionKind::VoiceStart | ActionKind::VoiceStop | ActionKind::VoiceCancel => {

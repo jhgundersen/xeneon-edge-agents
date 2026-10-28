@@ -152,11 +152,12 @@ The only actions are:
   by this daemon instance.
 - `voice_cancel`: takes no agent or capability and discards only a recording
   owned by this daemon instance.
-- `spotify_desktop`: takes no agent or capability and focuses the single exact
-  Spotify compositor client, or launches its fixed desktop entry when none
-  exists.
-- `discord_desktop`: takes no agent or capability and applies the same
-  focus-or-launch policy to the fixed Discord web-app identity.
+- `desktop_app`: takes no agent or capability and requires `app_id`, one of
+  the ids in the snapshot's `desktop_apps` (0-4 entries from the daemon's
+  `[[desktop.apps]]` configuration). The daemon focuses the single exact
+  compositor client with that entry's class, or launches its desktop entry
+  when none exists. An id that is not configured is refused. `app_id` is
+  rejected on every other action.
 - `order_grouped` and `order_priority`: take no agent or capability and apply
   one typed, idempotent ordering value through Herdr's public API. Stock
   Herdr protocol 22 has no ordering API, so for an all-stock roster the daemon

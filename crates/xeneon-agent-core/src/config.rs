@@ -61,6 +61,103 @@ pub struct ScreenConfig {
 pub struct DesktopConfig {
     pub edge_output: Option<String>,
     pub herdr_class: String,
+    /// Header shortcuts, in display order. The portal can only name one of
+    /// these by `id`; the daemon resolves everything else from this list.
+    pub apps: Vec<DesktopAppConfig>,
+}
+
+pub const MAX_DESKTOP_APPS: usize = 4;
+const DESKTOP_APP_ACCENTS: [&str; 7] = [
+    "accent", "green", "blue", "cyan", "magenta", "orange", "yellow",
+];
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopAppConfig {
+    /// Stable lowercase identifier the portal sends back.
+    pub id: String,
+    /// Button text.
+    pub label: String,
+    /// Desktop entry launched through `uwsm app` when no window exists.
+    pub desktop_id: String,
+    /// Exact Hyprland window class (or initial class) to focus.
+    pub class: String,
+    /// Initial window title preferred when several windows share the class.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Theme color role for the button accent.
+    #[serde(default = "default_app_accent")]
+    pub accent: String,
+}
+
+fn default_app_accent() -> String {
+    "accent".into()
+}
+
+fn default_desktop_apps() -> Vec<DesktopAppConfig> {
+    vec![
+        DesktopAppConfig {
+            id: "spotify".into(),
+            label: "Spotify".into(),
+            desktop_id: "spotify.desktop".into(),
+            class: "spotify".into(),
+            title: Some("Spotify".into()),
+            accent: "green".into(),
+        },
+        DesktopAppConfig {
+            id: "discord".into(),
+            label: "Discord".into(),
+            desktop_id: "Discord.desktop".into(),
+            class: "chrome-discord.com__channels_@me-Default".into(),
+            title: Some("Discord".into()),
+            accent: "blue".into(),
+        },
+    ]
+}
+
+impl DesktopAppConfig {
+    fn validate(&self) -> Result<()> {
+        let id_ok = !self.id.is_empty()
+            && self.id.len() <= 32
+            && self
+                .id
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-');
+        if !id_ok {
+            anyhow::bail!("desktop.apps id must be 1-32 lowercase letters, digits, or '-'");
+        }
+        let label = self.label.trim();
+        if label.is_empty() || label.chars().count() > 16 {
+            anyhow::bail!("desktop.apps '{}' label must be 1-16 characters", self.id);
+        }
+        if !self.desktop_id.ends_with(".desktop")
+            || self.desktop_id.contains('/')
+            || self.desktop_id.starts_with('-')
+        {
+            anyhow::bail!(
+                "desktop.apps '{}' desktop_id must be a bare .desktop file name",
+                self.id
+            );
+        }
+        if self.class.trim().is_empty() {
+            anyhow::bail!("desktop.apps '{}' class must not be empty", self.id);
+        }
+        if self
+            .title
+            .as_deref()
+            .is_some_and(|title| title.trim().is_empty())
+        {
+            anyhow::bail!("desktop.apps '{}' title must not be empty", self.id);
+        }
+        if !DESKTOP_APP_ACCENTS.contains(&self.accent.as_str()) {
+            anyhow::bail!(
+                "desktop.apps '{}' accent must be one of {}",
+                self.id,
+                DESKTOP_APP_ACCENTS.join(", ")
+            );
+        }
+        Ok(())
+    }
 }
 
 impl Default for Config {
@@ -86,6 +183,7 @@ impl Default for DesktopConfig {
         Self {
             edge_output: None,
             herdr_class: "herdr".into(),
+            apps: default_desktop_apps(),
         }
     }
 }
@@ -182,6 +280,18 @@ impl Config {
         }
         if self.desktop.herdr_class.trim().is_empty() {
             anyhow::bail!("desktop.herdr_class must not be empty");
+        }
+        if self.desktop.apps.len() > MAX_DESKTOP_APPS {
+            anyhow::bail!("desktop.apps allows at most {MAX_DESKTOP_APPS} shortcuts");
+        }
+        for (index, app) in self.desktop.apps.iter().enumerate() {
+            app.validate()?;
+            if self.desktop.apps[..index]
+                .iter()
+                .any(|earlier| earlier.id == app.id)
+            {
+                anyhow::bail!("desktop.apps id '{}' is used more than once", app.id);
+            }
         }
         if self.herdr_refresh_ms < 250
             || self.health_refresh_ms < 250
@@ -284,6 +394,50 @@ mod tests {
             ..Config::default()
         };
         assert!(too_fast.validate().is_err());
+    }
+
+    fn app(id: &str) -> String {
+        format!(
+            "[[desktop.apps]]\nid = \"{id}\"\nlabel = \"{id}\"\ndesktop_id = \"{id}.desktop\"\nclass = \"{id}\"\n"
+        )
+    }
+
+    #[test]
+    fn desktop_apps_parse_zero_to_four_shortcuts() {
+        assert_eq!(Config::default().desktop.apps.len(), 2);
+
+        let none: Config = toml::from_str("[desktop]\napps = []\n").unwrap();
+        none.validate().unwrap();
+        assert!(none.desktop.apps.is_empty());
+
+        let four: Config = toml::from_str(&["a", "b", "c", "d"].map(app).concat()).unwrap();
+        four.validate().unwrap();
+        assert_eq!(four.desktop.apps[3].id, "d");
+        assert_eq!(four.desktop.apps[0].accent, "accent");
+        assert_eq!(four.desktop.apps[0].title, None);
+
+        let five: Config = toml::from_str(&["a", "b", "c", "d", "e"].map(app).concat()).unwrap();
+        assert!(five.validate().is_err());
+    }
+
+    #[test]
+    fn desktop_apps_reject_unsafe_or_ambiguous_entries() {
+        let duplicate: Config = toml::from_str(&["a", "a"].map(app).concat()).unwrap();
+        assert!(duplicate.validate().is_err());
+
+        for broken in [
+            app("Bad Id"),
+            app("ok").replace("ok.desktop", "../ok.desktop"),
+            app("ok").replace("ok.desktop", "--help.desktop"),
+            app("ok").replace("ok.desktop", "ok"),
+            app("ok").replace("label = \"ok\"", "label = \"   \""),
+            app("ok").replace("class = \"ok\"", "class = \"\""),
+            app("ok") + "accent = \"chartreuse\"\n",
+        ] {
+            let parsed: Config = toml::from_str(&broken).unwrap();
+            assert!(parsed.validate().is_err(), "accepted: {broken}");
+        }
+        assert!(toml::from_str::<Config>(&(app("ok") + "exec = \"rm -rf\"\n")).is_err());
     }
 
     #[test]

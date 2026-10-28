@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 use tokio::process::Command;
 use tokio::sync::Mutex;
@@ -19,8 +19,8 @@ const PORTAL_PREVIEW_CLASS_PREFIX: &str = "org.xeneon-edge.agent-portal-preview"
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DesktopApp {
-    Spotify,
-    Discord,
+    /// Index into the configured `desktop.apps` shortcuts.
+    Configured(usize),
     T3code,
 }
 
@@ -31,10 +31,10 @@ pub enum DesktopAppOutcome {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct DesktopAppSpec {
-    desktop_id: &'static str,
-    class: &'static str,
-    main_title: &'static str,
+struct DesktopAppSpec<'a> {
+    desktop_id: &'a str,
+    class: &'a str,
+    main_title: Option<&'a str>,
 }
 
 #[derive(Debug, Clone)]
@@ -138,8 +138,17 @@ impl DesktopController {
         dispatch_focus(&self.hyprctl_bin, &address).await
     }
 
+    /// Resolves a portal-supplied shortcut id against the configured list.
+    pub fn configured_app(&self, id: &str) -> Option<DesktopApp> {
+        self.config
+            .apps
+            .iter()
+            .position(|app| app.id == id)
+            .map(DesktopApp::Configured)
+    }
+
     pub async fn focus_or_launch(&self, app: DesktopApp) -> Result<DesktopAppOutcome> {
-        let spec = desktop_app_spec(app);
+        let spec = desktop_app_spec(&self.config, app)?;
         let clients = hypr_json::<Vec<HyprClient>>(&self.hyprctl_bin, &["clients", "-j"]).await?;
         match select_desktop_candidate(&clients, spec)? {
             Some(client) => {
@@ -170,7 +179,7 @@ impl DesktopController {
     async fn wait_for_launched_client(
         &self,
         app: DesktopApp,
-        spec: DesktopAppSpec,
+        spec: DesktopAppSpec<'_>,
     ) -> Result<DesktopAppOutcome> {
         let deadline = Instant::now() + self.launch_observation_timeout;
         loop {
@@ -207,7 +216,7 @@ impl DesktopController {
     /// Focuses an already mapped fixed desktop client without launching it.
     /// Agent focus never starts an application; a missing window is an error.
     pub async fn focus_existing(&self, app: DesktopApp) -> Result<()> {
-        let spec = desktop_app_spec(app);
+        let spec = desktop_app_spec(&self.config, app)?;
         let clients = hypr_json::<Vec<HyprClient>>(&self.hyprctl_bin, &["clients", "-j"]).await?;
         match select_desktop_candidate(&clients, spec)? {
             Some(client) => dispatch_focus(&self.hyprctl_bin, &client.address).await,
@@ -297,7 +306,10 @@ fn select_herdr_candidate<'a>(
     Ok(recent[0])
 }
 
-fn desktop_candidates(clients: &[HyprClient], spec: DesktopAppSpec) -> Vec<&HyprClient> {
+fn desktop_candidates<'c>(
+    clients: &'c [HyprClient],
+    spec: DesktopAppSpec<'_>,
+) -> Vec<&'c HyprClient> {
     clients
         .iter()
         .filter(|client| {
@@ -307,10 +319,10 @@ fn desktop_candidates(clients: &[HyprClient], spec: DesktopAppSpec) -> Vec<&Hypr
         .collect()
 }
 
-fn select_desktop_candidate(
-    clients: &[HyprClient],
-    spec: DesktopAppSpec,
-) -> Result<Option<&HyprClient>> {
+fn select_desktop_candidate<'c>(
+    clients: &'c [HyprClient],
+    spec: DesktopAppSpec<'_>,
+) -> Result<Option<&'c HyprClient>> {
     let candidates = desktop_candidates(clients, spec);
     if candidates.len() <= 1 {
         return Ok(candidates.into_iter().next());
@@ -319,7 +331,10 @@ fn select_desktop_candidate(
     let titled: Vec<_> = candidates
         .iter()
         .copied()
-        .filter(|client| client.initial_title.eq_ignore_ascii_case(spec.main_title))
+        .filter(|client| {
+            spec.main_title
+                .is_some_and(|title| client.initial_title.eq_ignore_ascii_case(title))
+        })
         .collect();
     let candidates = if titled.is_empty() {
         candidates
@@ -368,27 +383,28 @@ fn select_desktop_candidate(
     )
 }
 
-fn desktop_app_spec(app: DesktopApp) -> DesktopAppSpec {
+fn desktop_app_spec(config: &DesktopConfig, app: DesktopApp) -> Result<DesktopAppSpec<'_>> {
     match app {
-        DesktopApp::Spotify => DesktopAppSpec {
-            desktop_id: "spotify.desktop",
-            class: "spotify",
-            main_title: "Spotify",
-        },
-        DesktopApp::Discord => DesktopAppSpec {
-            desktop_id: "Discord.desktop",
-            class: "chrome-discord.com__channels_@me-Default",
-            main_title: "Discord",
-        },
-        DesktopApp::T3code => DesktopAppSpec {
+        DesktopApp::Configured(index) => {
+            let configured = config
+                .apps
+                .get(index)
+                .ok_or_else(|| anyhow!("desktop app {index} is not configured"))?;
+            Ok(DesktopAppSpec {
+                desktop_id: &configured.desktop_id,
+                class: &configured.class,
+                main_title: configured.title.as_deref(),
+            })
+        }
+        DesktopApp::T3code => Ok(DesktopAppSpec {
             desktop_id: "t3code.desktop",
             class: "t3code",
-            main_title: "T3 Code",
-        },
+            main_title: Some("T3 Code"),
+        }),
     }
 }
 
-async fn launch_desktop(uwsm_bin: &Path, spec: DesktopAppSpec) -> Result<()> {
+async fn launch_desktop(uwsm_bin: &Path, spec: DesktopAppSpec<'_>) -> Result<()> {
     let mut child = Command::new(uwsm_bin)
         // Bypass uwsm-app's runtime-directory lock/FIFO wrapper: the daemon's
         // sandbox can read the UWSM pipes but may only write its owned runtime
@@ -964,27 +980,27 @@ mod tests {
     #[test]
     fn desktop_apps_are_fixed_allowlisted_targets() {
         assert_eq!(
-            desktop_app_spec(DesktopApp::Spotify),
+            desktop_app_spec(&DesktopConfig::default(), DesktopApp::Configured(0)).unwrap(),
             DesktopAppSpec {
                 desktop_id: "spotify.desktop",
                 class: "spotify",
-                main_title: "Spotify",
+                main_title: Some("Spotify"),
             }
         );
         assert_eq!(
-            desktop_app_spec(DesktopApp::Discord),
+            desktop_app_spec(&DesktopConfig::default(), DesktopApp::Configured(1)).unwrap(),
             DesktopAppSpec {
                 desktop_id: "Discord.desktop",
                 class: "chrome-discord.com__channels_@me-Default",
-                main_title: "Discord",
+                main_title: Some("Discord"),
             }
         );
         assert_eq!(
-            desktop_app_spec(DesktopApp::T3code),
+            desktop_app_spec(&DesktopConfig::default(), DesktopApp::T3code).unwrap(),
             DesktopAppSpec {
                 desktop_id: "t3code.desktop",
                 class: "t3code",
-                main_title: "T3 Code",
+                main_title: Some("T3 Code"),
             }
         );
     }
@@ -999,14 +1015,20 @@ mod tests {
         )
         .unwrap();
 
-        let selected = select_desktop_candidate(&clients, desktop_app_spec(DesktopApp::T3code))
-            .unwrap()
-            .unwrap();
+        let selected = select_desktop_candidate(
+            &clients,
+            desktop_app_spec(&DesktopConfig::default(), DesktopApp::T3code).unwrap(),
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(selected.address, "0x2");
         assert!(
-            select_desktop_candidate(&clients[..1], desktop_app_spec(DesktopApp::T3code))
-                .unwrap()
-                .is_none()
+            select_desktop_candidate(
+                &clients[..1],
+                desktop_app_spec(&DesktopConfig::default(), DesktopApp::T3code).unwrap()
+            )
+            .unwrap()
+            .is_none()
         );
     }
 
@@ -1021,9 +1043,12 @@ mod tests {
         )
         .unwrap();
 
-        let selected = select_desktop_candidate(&clients, desktop_app_spec(DesktopApp::Spotify))
-            .unwrap()
-            .unwrap();
+        let selected = select_desktop_candidate(
+            &clients,
+            desktop_app_spec(&DesktopConfig::default(), DesktopApp::Configured(0)).unwrap(),
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(selected.address, "0x3");
     }
 
@@ -1037,7 +1062,13 @@ mod tests {
         )
         .unwrap();
 
-        assert!(select_desktop_candidate(&clients, desktop_app_spec(DesktopApp::Spotify)).is_err());
+        assert!(
+            select_desktop_candidate(
+                &clients,
+                desktop_app_spec(&DesktopConfig::default(), DesktopApp::Configured(0)).unwrap()
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -1050,7 +1081,13 @@ mod tests {
         )
         .unwrap();
 
-        assert!(select_desktop_candidate(&clients, desktop_app_spec(DesktopApp::Spotify)).is_err());
+        assert!(
+            select_desktop_candidate(
+                &clients,
+                desktop_app_spec(&DesktopConfig::default(), DesktopApp::Configured(0)).unwrap()
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -1122,20 +1159,22 @@ sleep 1
         let controller = Arc::new(controller);
 
         let first_controller = Arc::clone(&controller);
-        let first =
-            tokio::spawn(
-                async move { first_controller.focus_or_launch(DesktopApp::Spotify).await },
-            );
+        let first = tokio::spawn(async move {
+            first_controller
+                .focus_or_launch(DesktopApp::Configured(0))
+                .await
+        });
         tokio::time::sleep(Duration::from_millis(5)).await;
         let second_controller = Arc::clone(&controller);
-        let second =
-            tokio::spawn(
-                async move { second_controller.focus_or_launch(DesktopApp::Spotify).await },
-            );
+        let second = tokio::spawn(async move {
+            second_controller
+                .focus_or_launch(DesktopApp::Configured(0))
+                .await
+        });
         let other_app_controller = Arc::clone(&controller);
         let other_app = tokio::spawn(async move {
             other_app_controller
-                .focus_or_launch(DesktopApp::Discord)
+                .focus_or_launch(DesktopApp::Configured(1))
                 .await
         });
 
@@ -1199,13 +1238,13 @@ printf '%s\n' "$*" >> "{launch_log}"
 
         assert!(
             controller
-                .focus_or_launch(DesktopApp::Spotify)
+                .focus_or_launch(DesktopApp::Configured(0))
                 .await
                 .is_err()
         );
         assert!(
             controller
-                .focus_or_launch(DesktopApp::Spotify)
+                .focus_or_launch(DesktopApp::Configured(0))
                 .await
                 .is_err()
         );

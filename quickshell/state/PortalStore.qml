@@ -30,6 +30,8 @@ QtObject {
         "mode": "herdr",
         "switchable": false
     })
+    // Header shortcuts configured in the daemon's desktop.apps (0-4).
+    property var desktopApps: []
     property var health: ({})
     property var voice: ({
         "available": false,
@@ -109,6 +111,7 @@ QtObject {
         agents = []
         agentOrder = {"available": false, "mode": "grouped"}
         backend = {"mode": "herdr", "switchable": false}
+        desktopApps = []
         health = {}
         voice = {
             "available": false,
@@ -303,6 +306,38 @@ QtObject {
             "mode": mode,
             "switchable": source.switchable === true
         }
+    }
+
+    // Only ids, labels, and accent roles the daemon validated are accepted;
+    // anything malformed drops that shortcut rather than rendering it.
+    function normalizeDesktopApps(value) {
+        var allowedAccents = [
+            "accent", "green", "blue", "cyan", "magenta", "orange", "yellow"
+        ]
+        var result = []
+        if (!Array.isArray(value))
+            return result
+        for (var index = 0; index < value.length && result.length < 4;
+                index += 1) {
+            var app = value[index]
+            if (app === null || typeof app !== "object")
+                continue
+            var id = safeString(app.id, "", 32)
+            var label = safeString(app.label, "", 16).trim()
+            var accent = safeString(app.accent, "accent", 16)
+            if (!/^[a-z0-9-]{1,32}$/.test(id) || label === "")
+                continue
+            if (result.some(function(existing) { return existing.id === id }))
+                continue
+            result.push({
+                "id": id,
+                "label": label,
+                "accent": allowedAccents.indexOf(accent) === -1
+                    ? "accent"
+                    : accent
+            })
+        }
+        return result
     }
 
     // Human names for the active agent manager. The wire value is the only
@@ -725,6 +760,7 @@ QtObject {
         var nextUsage = normalizeUsage(snapshot.usage)
         var nextMicro = normalizeMicro(snapshot.micro)
         backend = nextBackend
+        desktopApps = normalizeDesktopApps(snapshot.desktop_apps)
         var nextSignature = semanticSignature(
             nextConnection,
             nextAgents,

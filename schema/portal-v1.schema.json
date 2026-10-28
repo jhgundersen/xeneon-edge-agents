@@ -22,8 +22,7 @@
         "approve",
         "interrupt",
         "restore_focus",
-        "spotify_desktop",
-        "discord_desktop",
+        "desktop_app",
         "voice_start",
         "voice_stop",
         "voice_cancel",
@@ -42,6 +41,25 @@
       "properties": {
         "mode": { "$ref": "#/$defs/agentBackend" },
         "switchable": { "type": "boolean" }
+      }
+    },
+    "desktopApp": {
+      "type": "object",
+      "required": ["id", "label", "accent"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9-]{1,32}$" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 16 },
+        "accent": {
+          "enum": [
+            "accent",
+            "green",
+            "blue",
+            "cyan",
+            "magenta",
+            "orange",
+            "yellow"
+          ]
+        }
       }
     },
     "agentOrder": {
@@ -271,6 +289,11 @@
         },
         "agent_order": { "$ref": "#/$defs/agentOrder" },
         "backend": { "$ref": "#/$defs/backend" },
+        "desktop_apps": {
+          "type": "array",
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/desktopApp" }
+        },
         "voice": { "$ref": "#/$defs/voice" },
         "usage": { "$ref": "#/$defs/usage" },
         "micro": { "$ref": "#/$defs/micro" },
@@ -323,7 +346,8 @@
         "sequence": { "type": "integer", "minimum": 0 },
         "agent_id": { "type": "string", "minLength": 1 },
         "action": { "$ref": "#/$defs/actionKind" },
-        "capability_id": { "type": "string", "minLength": 1 }
+        "capability_id": { "type": "string", "minLength": 1 },
+        "app_id": { "type": "string", "pattern": "^[a-z0-9-]{1,32}$" }
       }
     }
   }

@@ -233,25 +233,23 @@ Item {
         return true
     }
 
-    function desktopActionPending(action) {
+    function desktopActionPending(appId) {
         var requestIds = Object.keys(pendingDesktopActions)
         for (var index = 0; index < requestIds.length; index += 1) {
-            if (pendingDesktopActions[requestIds[index]] === action)
+            if (pendingDesktopActions[requestIds[index]] === appId)
                 return true
         }
         return false
     }
 
-    function requestDesktop(action) {
-        if (desktopActionPending(action))
+    function requestDesktop(appId) {
+        if (desktopActionPending(appId))
             return false
-        var requestId = action === "spotify_desktop"
-            ? bridge.openSpotifyDesktop()
-            : bridge.openDiscordDesktop()
+        var requestId = bridge.openDesktopApp(appId)
         if (requestId === "")
             return false
         var pending = Object.assign({}, pendingDesktopActions)
-        pending[requestId] = action
+        pending[requestId] = appId
         pendingDesktopActions = pending
         return true
     }
@@ -640,32 +638,26 @@ Item {
                 }
             }
 
-            DesktopAppButton {
-                objectName: "spotifyDesktopButton"
-                width: 132
-                height: 48
-                label: "SPOTIFY"
-                accent: root.theme.green
-                theme: root.theme
-                pending: root.desktopActionPending("spotify_desktop")
-                enabled: root.controlCenterInteractive
-                    && !root.store.freshSnapshotRequired
-                onInteracted: root.activity.noteUserActivity()
-                onTriggered: root.requestDesktop("spotify_desktop")
-            }
+            // One button per daemon-configured shortcut (desktop.apps, 0-4).
+            Repeater {
+                model: root.store.desktopApps
 
-            DesktopAppButton {
-                objectName: "discordDesktopButton"
-                width: 132
-                height: 48
-                label: "DISCORD"
-                accent: root.theme.blue
-                theme: root.theme
-                pending: root.desktopActionPending("discord_desktop")
-                enabled: root.controlCenterInteractive
-                    && !root.store.freshSnapshotRequired
-                onInteracted: root.activity.noteUserActivity()
-                onTriggered: root.requestDesktop("discord_desktop")
+                DesktopAppButton {
+                    required property var modelData
+
+                    objectName: "desktopAppButton_" + modelData.id
+                    // Four shortcuts must still clear the page dots.
+                    width: root.store.desktopApps.length > 2 ? 112 : 132
+                    height: 48
+                    label: String(modelData.label).toUpperCase()
+                    accent: root.theme[modelData.accent] || root.theme.accent
+                    theme: root.theme
+                    pending: root.desktopActionPending(modelData.id)
+                    enabled: root.controlCenterInteractive
+                        && !root.store.freshSnapshotRequired
+                    onInteracted: root.activity.noteUserActivity()
+                    onTriggered: root.requestDesktop(modelData.id)
+                }
             }
         }
 
@@ -673,7 +665,12 @@ Item {
             id: pageDots
             objectName: "pageDots"
 
-            anchors.centerIn: parent
+            // Centered unless the header shortcuts reach the middle.
+            x: Math.max(
+                (parent.width - width) / 2,
+                headerActions.x + headerActions.width + 24
+            )
+            anchors.verticalCenter: parent.verticalCenter
             spacing: 12
 
             visible: root.pageCount > 1
@@ -727,6 +724,7 @@ Item {
         }
 
         Row {
+            objectName: "headerStatus"
             anchors {
                 right: parent.right
                 verticalCenter: parent.verticalCenter
@@ -1337,8 +1335,7 @@ Item {
                 }
                 return
             }
-            if (result.action === "spotify_desktop"
-                    || result.action === "discord_desktop") {
+            if (result.action === "desktop_app") {
                 var desktopPending = Object.assign(
                     {},
                     root.pendingDesktopActions

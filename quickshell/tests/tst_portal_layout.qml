@@ -19,6 +19,7 @@ TestCase {
         property var agents: []
         property var agentOrder: ({"available": true, "mode": "grouped"})
         property var backend: ({"mode": "herdr", "switchable": true})
+        property var desktopApps: []
         property var sessions: []
         property var usage: ({"providers": []})
         property var micro: ({"connected": false, "charging": false})
@@ -45,8 +46,7 @@ TestCase {
         property bool ready: true
         property int orderRequests: 0
         property string lastOrder: ""
-        property int spotifyRequests: 0
-        property int discordRequests: 0
+        property var appRequests: ({})
         property int backendRequests: 0
         property string lastBackend: ""
 
@@ -54,13 +54,11 @@ TestCase {
         function openAgent(agentId) { return agentId }
         function approveAgent() { return "approve" }
         function interruptAgent() { return "interrupt" }
-        function openSpotifyDesktop() {
-            spotifyRequests += 1
-            return "spotify-" + spotifyRequests
-        }
-        function openDiscordDesktop() {
-            discordRequests += 1
-            return "discord-" + discordRequests
+        function openDesktopApp(appId) {
+            var next = Object.assign({}, appRequests)
+            next[appId] = (next[appId] || 0) + 1
+            appRequests = next
+            return appId + "-" + next[appId]
         }
         function startVoice() { return "voice-start" }
         function stopVoice() { return "voice-stop" }
@@ -155,8 +153,11 @@ TestCase {
         mockStore.testSurfaceState = ""
         mockBridge.orderRequests = 0
         mockBridge.lastOrder = ""
-        mockBridge.spotifyRequests = 0
-        mockBridge.discordRequests = 0
+        mockBridge.appRequests = ({})
+        mockStore.desktopApps = [
+            {"id": "spotify", "label": "Spotify", "accent": "green"},
+            {"id": "discord", "label": "Discord", "accent": "blue"}
+        ]
         mockBridge.backendRequests = 0
         mockBridge.lastBackend = ""
         portal.pendingDesktopActions = ({})
@@ -400,8 +401,8 @@ TestCase {
     function test_desktopLaunchersSitImmediatelyAfterOrderWithoutOverlap() {
         var actions = findChild(portal, "headerActions")
         var order = findChild(portal, "agentOrderToggle")
-        var spotify = findChild(portal, "spotifyDesktopButton")
-        var discord = findChild(portal, "discordDesktopButton")
+        var spotify = findChild(portal, "desktopAppButton_spotify")
+        var discord = findChild(portal, "desktopAppButton_discord")
         var dots = findChild(portal, "pageDots")
         verify(actions !== null)
         verify(order !== null)
@@ -418,14 +419,15 @@ TestCase {
         verify(discord.enabled)
 
         verify(spotify.activate())
-        compare(mockBridge.spotifyRequests, 1)
-        compare(mockBridge.discordRequests, 0)
+        compare(mockBridge.appRequests.spotify, 1)
+        compare(mockBridge.appRequests.discord, undefined)
         verify(spotify.pending)
+        verify(!discord.pending)
         verify(!spotify.activate())
-        compare(mockBridge.spotifyRequests, 1)
+        compare(mockBridge.appRequests.spotify, 1)
         mockStore.actionResultReceived({
             "request_id": "spotify-1",
-            "action": "spotify_desktop",
+            "action": "desktop_app",
             "ok": true,
             "code": "desktop_ready",
             "message": "desktop_ready"
@@ -433,17 +435,51 @@ TestCase {
         verify(!spotify.pending)
 
         verify(discord.activate())
-        compare(mockBridge.spotifyRequests, 1)
-        compare(mockBridge.discordRequests, 1)
+        compare(mockBridge.appRequests.spotify, 1)
+        compare(mockBridge.appRequests.discord, 1)
         verify(discord.pending)
         mockStore.actionResultReceived({
             "request_id": "discord-1",
-            "action": "discord_desktop",
+            "action": "desktop_app",
             "ok": false,
             "code": "desktop_launch_failed",
             "message": "desktop_launch_failed"
         })
         verify(!discord.pending)
+    }
+
+    function test_desktopShortcutsFollowConfigurationFromZeroToFour() {
+        var actions = findChild(portal, "headerActions")
+        var order = findChild(portal, "agentOrderToggle")
+        var dots = findChild(portal, "pageDots")
+
+        mockStore.desktopApps = []
+        wait(0)
+        compare(findChild(portal, "desktopAppButton_spotify"), null)
+        tryCompare(actions, "width", order.x + order.width)
+
+        mockStore.desktopApps = [
+            {"id": "slack", "label": "Slack", "accent": "magenta"},
+            {"id": "teams", "label": "Teams", "accent": "blue"},
+            {"id": "mail", "label": "Mail", "accent": "accent"},
+            {"id": "notes", "label": "Notes", "accent": "yellow"}
+        ]
+        wait(0)
+        var last = findChild(portal, "desktopAppButton_notes")
+        verify(last !== null)
+        compare(last.Accessible.name, "NOTES")
+        tryVerify(function() {
+            return actions.width === last.x + last.width
+        })
+        verify(actions.x + actions.width < dots.x)
+        // Two pages of dots still clear the voice/micro status row.
+        mockStore.agents = agents(20)
+        mockStore.agentOrder = {"available": true, "mode": "priority"}
+        tryCompare(portal, "pageCount", 2)
+        var status = findChild(portal, "headerStatus")
+        tryVerify(function() { return dots.x + dots.width < status.x })
+        verify(last.activate())
+        compare(mockBridge.appRequests.notes, 1)
     }
 
     function test_lowerCountsAndShrinkClampSafely() {

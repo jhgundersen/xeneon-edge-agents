@@ -26,8 +26,9 @@ use crate::{
     micro::MicroCollector,
     model::{
         ActionKind, ActionResult, AgentActions, AgentBackend, AgentBackendSnapshot, AgentOrderMode,
-        AgentOrderSnapshot, AgentStatus, ConnectionState, PortalCommand, PortalSnapshot,
-        SCHEMA_VERSION, ServerMessage, SessionState, SessionView, VoiceState, sort_agents,
+        AgentOrderSnapshot, AgentStatus, ConnectionState, DesktopAppView, PortalCommand,
+        PortalSnapshot, SCHEMA_VERSION, ServerMessage, SessionState, SessionView, VoiceState,
+        sort_agents,
     },
     protocol::{command_capability_matches, validate_command},
     t3code::{self, T3codeClient, T3codeTarget},
@@ -186,6 +187,16 @@ impl DaemonRuntime {
         config.validate()?;
         let epoch = Uuid::new_v4().to_string();
         let mut snapshot = PortalSnapshot::empty(epoch);
+        snapshot.desktop_apps = config
+            .desktop
+            .apps
+            .iter()
+            .map(|app| DesktopAppView {
+                id: app.id.clone(),
+                label: app.label.clone(),
+                accent: app.accent.clone(),
+            })
+            .collect();
         let persisted = backend_state_path
             .as_deref()
             .and_then(load_persisted_backend)
@@ -817,14 +828,19 @@ impl DaemonRuntime {
             };
         }
 
-        if matches!(
-            command.action,
-            ActionKind::SpotifyDesktop | ActionKind::DiscordDesktop
-        ) {
-            let app = match command.action {
-                ActionKind::SpotifyDesktop => DesktopApp::Spotify,
-                ActionKind::DiscordDesktop => DesktopApp::Discord,
-                _ => unreachable!("desktop command filtered before dispatch"),
+        if command.action == ActionKind::DesktopApp {
+            // The portal only names a configured shortcut; an unknown id is
+            // refused before anything is focused or launched.
+            let Some(app) = command
+                .app_id
+                .as_deref()
+                .and_then(|id| self.desktop.configured_app(id))
+            else {
+                return action_error(
+                    &command.request_id,
+                    "target_unavailable",
+                    "desktop app is not configured",
+                );
             };
             return match self.desktop.focus_or_launch(app).await {
                 Ok(DesktopAppOutcome::Focused) => {
@@ -908,8 +924,7 @@ impl DaemonRuntime {
             ActionKind::Approve
             | ActionKind::Interrupt
             | ActionKind::RestoreFocus
-            | ActionKind::SpotifyDesktop
-            | ActionKind::DiscordDesktop
+            | ActionKind::DesktopApp
             | ActionKind::VoiceStart
             | ActionKind::VoiceStop
             | ActionKind::VoiceCancel
@@ -1765,6 +1780,7 @@ mod tests {
                 agent_id: None,
                 action: ActionKind::OrderPriority,
                 capability_id: None,
+                app_id: None,
             })
             .await;
 
@@ -1888,6 +1904,7 @@ mod tests {
                 agent_id: None,
                 action: ActionKind::OrderPriority,
                 capability_id: None,
+                app_id: None,
             })
             .await;
 
@@ -1964,6 +1981,7 @@ mod tests {
             agent_id: None,
             action: ActionKind::OrderPriority,
             capability_id: None,
+            app_id: None,
         };
         let first_runtime = runtime.clone();
         let first =
@@ -1979,6 +1997,7 @@ mod tests {
                     agent_id: None,
                     action: ActionKind::OrderPriority,
                     capability_id: None,
+                    app_id: None,
                 })
                 .await
         });
@@ -2149,6 +2168,7 @@ mod tests {
             agent_id: None,
             action: ActionKind::VoiceStart,
             capability_id: None,
+            app_id: None,
         };
 
         assert!(runtime.process_voice_command(&command, client_id).await.ok);
@@ -2216,7 +2236,38 @@ mod tests {
             agent_id: None,
             action,
             capability_id: None,
+            app_id: None,
         }
+    }
+
+    #[tokio::test]
+    async fn desktop_apps_are_published_and_unknown_ids_are_refused() {
+        let (runtime, _) = DaemonRuntime::new(Config::default()).unwrap();
+        let published: Vec<_> = runtime
+            .state
+            .read()
+            .await
+            .snapshot
+            .desktop_apps
+            .iter()
+            .map(|app| (app.id.clone(), app.accent.clone()))
+            .collect();
+        assert_eq!(
+            published,
+            [
+                ("spotify".to_owned(), "green".to_owned()),
+                ("discord".to_owned(), "blue".to_owned())
+            ]
+        );
+
+        let line = serde_json::to_string(&PortalCommand {
+            app_id: Some("not-configured".into()),
+            ..backend_command(ActionKind::DesktopApp, 0)
+        })
+        .unwrap();
+        let result = runtime.process_command(&line, Uuid::new_v4()).await;
+        assert!(!result.ok);
+        assert_eq!(result.code, "target_unavailable");
     }
 
     #[test]
@@ -2355,6 +2406,7 @@ mod tests {
                 agent_id: None,
                 action: ActionKind::OrderPriority,
                 capability_id: None,
+                app_id: None,
             })
             .await;
 
@@ -2407,6 +2459,7 @@ mod tests {
                 agent_id: None,
                 action: ActionKind::OrderPriority,
                 capability_id: None,
+                app_id: None,
             })
             .await;
 
@@ -2449,6 +2502,7 @@ mod tests {
                 agent_id: Some("thread".into()),
                 action,
                 capability_id: capability.map(str::to_owned),
+                app_id: None,
             })
             .unwrap()
         };

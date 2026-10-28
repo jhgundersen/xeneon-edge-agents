@@ -38,8 +38,10 @@ Rectangle {
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
+            width: Math.min(implicitWidth, root.width - 16)
             text: root.label
             textFormat: Text.PlainText
+            elide: Text.ElideRight
             color: root.theme.textPrimary
             font {
                 family: "monospace"
