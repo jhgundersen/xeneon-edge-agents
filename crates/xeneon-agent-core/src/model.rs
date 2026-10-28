@@ -375,6 +375,10 @@ pub struct AgentView {
     pub repository: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree: Option<String>,
+    /// Checked-out branch (or short commit when detached), read from the
+    /// agent's working directory; never from terminal content.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
     pub session: String,
     pub focused: bool,
     pub observed_for_seconds: u64,
@@ -678,6 +682,7 @@ mod tests {
             workspace: "workspace".into(),
             repository: None,
             worktree: None,
+            branch: None,
             session: "default".into(),
             focused: false,
             observed_for_seconds: 0,

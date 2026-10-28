@@ -112,7 +112,6 @@ struct HerdrSnapshot {
 #[derive(Debug, Deserialize)]
 struct HerdrWorkspace {
     workspace_id: String,
-    number: u32,
     label: String,
     #[serde(default)]
     worktree: Option<HerdrWorkspaceWorktree>,
@@ -265,10 +264,10 @@ impl HerdrClient {
         for (index, raw) in response.result.snapshot.agents.into_iter().enumerate() {
             let id = opaque_agent_id(daemon_epoch, &descriptor.name, &raw.terminal_id);
             let workspace = workspaces.get(&raw.workspace_id);
-            let workspace_label = workspace.map_or_else(
-                || raw.workspace_id.clone(),
-                |workspace| format!("{} · {}", workspace.number, workspace.label),
-            );
+            // Herdr's workspace number means nothing on the EDGE; its name does.
+            let workspace_label = workspace
+                .and_then(|workspace| nonblank(Some(workspace.label.as_str())))
+                .map_or_else(|| raw.workspace_id.clone(), str::to_owned);
             let agent_name = nonblank(raw.agent.as_deref()).unwrap_or("agent").to_owned();
             let display_name = display_name(
                 &raw,
@@ -289,6 +288,7 @@ impl HerdrClient {
                 .filter(|worktree| worktree.is_linked_worktree)
                 .and_then(|worktree| worktree.checkout_path.file_name())
                 .map(|name| name.to_string_lossy().into_owned());
+            let branch = cwd.and_then(|path| git_branch(path));
             let actions = actions_from_extra(&raw.extra, raw.revision);
 
             targets.insert(
@@ -313,6 +313,7 @@ impl HerdrClient {
                 workspace: workspace_label,
                 repository,
                 worktree,
+                branch,
                 session: descriptor.name.clone(),
                 focused: raw.focused,
                 observed_for_seconds: 0,
@@ -485,6 +486,48 @@ fn display_name(
         Some(workspace) => format!("{agent_name} · {workspace}"),
         None => agent_name.to_owned(),
     }
+}
+
+/// The branch checked out in the repository containing `start`, read from
+/// git's own files (a `.git` directory, or a worktree's `gitdir:` pointer)
+/// without running git. A detached HEAD yields its short commit.
+fn git_branch(start: &Path) -> Option<String> {
+    let mut directory = Some(start);
+    for _ in 0..32 {
+        let current = directory?;
+        let dot_git = current.join(".git");
+        if let Ok(metadata) = std::fs::metadata(&dot_git) {
+            let git_dir = if metadata.is_dir() {
+                dot_git
+            } else {
+                let pointer = std::fs::read_to_string(&dot_git).ok()?;
+                let target = pointer.strip_prefix("gitdir:")?.trim();
+                let target = Path::new(target);
+                if target.is_absolute() {
+                    target.to_path_buf()
+                } else {
+                    current.join(target)
+                }
+            };
+            let head = std::fs::read_to_string(git_dir.join("HEAD")).ok()?;
+            let head = head.trim();
+            let branch = match head.strip_prefix("ref: refs/heads/") {
+                Some(branch) => branch.to_owned(),
+                None if head.len() >= 7 && head.bytes().all(|byte| byte.is_ascii_hexdigit()) => {
+                    head[..7].to_owned()
+                }
+                None => return None,
+            };
+            let safe = !branch.is_empty()
+                && branch.len() <= 64
+                && branch
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"-_./+".contains(&byte));
+            return safe.then_some(branch);
+        }
+        directory = current.parent();
+    }
+    None
 }
 
 fn nonblank(value: Option<&str>) -> Option<&str> {
@@ -673,6 +716,7 @@ fn request_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use tempfile::tempdir;
     use tokio::{
         io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -770,6 +814,39 @@ mod tests {
             display_name(&unnamed, &tabs, "codex", Some("xeneon")),
             "review portal"
         );
+    }
+
+    #[test]
+    fn branch_is_read_from_git_files_including_worktrees() {
+        let temp = tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        fs::create_dir_all(repo.join("src/deep")).unwrap();
+        fs::write(repo.join(".git/HEAD"), "ref: refs/heads/feature/edge\n").unwrap();
+        assert_eq!(
+            git_branch(&repo.join("src/deep")).as_deref(),
+            Some("feature/edge")
+        );
+
+        let worktree = temp.path().join("wt");
+        let worktree_git = repo.join(".git/worktrees/wt");
+        fs::create_dir_all(&worktree).unwrap();
+        fs::create_dir_all(&worktree_git).unwrap();
+        fs::write(
+            worktree.join(".git"),
+            format!("gitdir: {}\n", worktree_git.display()),
+        )
+        .unwrap();
+        fs::write(
+            worktree_git.join("HEAD"),
+            "0123456789abcdef0123456789abcdef01234567\n",
+        )
+        .unwrap();
+        assert_eq!(git_branch(&worktree).as_deref(), Some("0123456"));
+
+        fs::write(repo.join(".git/HEAD"), "ref: refs/heads/evil\u{1b}[2J\n").unwrap();
+        assert_eq!(git_branch(&repo), None);
+        assert_eq!(git_branch(&temp.path().join("nowhere")), None);
     }
 
     #[test]

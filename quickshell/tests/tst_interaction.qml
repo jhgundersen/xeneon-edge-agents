@@ -218,14 +218,15 @@ TestCase {
 
     function test_agentCardUsesAuthoritativeStateAgeWithoutGenericSummary() {
         compare(hostileCard.processLine(), "WORKING  ·  1S IN STATE")
-        compare(hostileCard.contextLine(), "<b>workspace</b>")
-        compare(hostileCard.spaceLine(), "SPACE // <b>workspace</b>")
+        // Without a repository the workspace takes the line under the state.
+        compare(hostileCard.contextLine(), "")
+        compare(hostileCard.spaceLine(), "<b>workspace</b>")
         var spaceName = findChild(hostileCard, "agentSpaceName")
         verify(spaceName !== null)
         compare(spaceName.textFormat, Text.PlainText)
         verify(
             hostileCard.Accessible.description.indexOf(
-                "SPACE // <b>workspace</b>"
+                "<b>workspace</b>"
             ) >= 0
         )
     }

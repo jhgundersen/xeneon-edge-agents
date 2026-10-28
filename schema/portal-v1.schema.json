@@ -372,6 +372,7 @@
         "workspace": { "type": "string" },
         "repository": { "type": "string" },
         "worktree": { "type": "string" },
+        "branch": { "type": "string", "maxLength": 64 },
         "session": { "type": "string" },
         "focused": { "type": "boolean" },
         "observed_for_seconds": { "type": "integer", "minimum": 0 },

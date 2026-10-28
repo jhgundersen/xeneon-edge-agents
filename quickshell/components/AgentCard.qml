@@ -120,29 +120,35 @@ Item {
             + observedDuration(agent.observed_for_seconds) + " IN STATE"
     }
 
+    // Bottom line: the workspace (and a linked worktree) when the line above
+    // already names the repository; empty when the workspace moved up there.
     function contextLine() {
         if (agent === null)
             return ""
-        var context = []
         var repository = String(agent.repository || "").trim()
         var worktree = String(agent.worktree || "").trim()
         var workspace = String(agent.workspace || "").trim()
-        if (repository !== "")
-            context.push(repository)
-        if (worktree !== "" && worktree !== repository)
-            context.push(worktree)
-        if (workspace !== ""
-                && workspace !== repository
-                && (repository === "" || workspace.indexOf(repository) < 0))
+        if (repository === "")
+            return ""
+        var context = []
+        if (workspace !== "" && workspace !== repository)
             context.push(workspace)
-        return context.length > 0 ? context.join("  ·  ") : "LOCAL WORKSPACE"
+        if (worktree !== "" && worktree !== repository && worktree !== workspace)
+            context.push(worktree)
+        return context.join("  ·  ")
     }
 
+    // Line under the state: repository and branch, else the workspace name.
     function spaceLine() {
         if (agent === null)
             return ""
-        var workspace = String(agent.workspace || "").trim()
-        return "SPACE // " + (workspace !== "" ? workspace : "LOCAL")
+        var repository = String(agent.repository || "").trim()
+        var branch = String(agent.branch || "").trim()
+        if (repository === "") {
+            var workspace = String(agent.workspace || "").trim()
+            return workspace !== "" ? workspace : "LOCAL"
+        }
+        return branch !== "" ? repository + "  ·  " + branch : repository
     }
 
     function requestFocus() {

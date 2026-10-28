@@ -147,6 +147,7 @@ TestCase {
             "observed_for_seconds": index,
             "workspace": "layout-test",
             "repository": "xeneon-edge-agents",
+            "branch": "main",
             "worktree": "",
             "actions": {
                 "open": true,
@@ -572,7 +573,7 @@ TestCase {
         verify(firstLastCard !== null)
         verify(firstSpaceName !== null)
         compare(firstGrid.columns, 7)
-        compare(firstSpaceName.text, "SPACE // LAYOUT-TEST")
+        compare(firstSpaceName.text, "XENEON-EDGE-AGENTS  ·  MAIN")
         verify(!firstSpaceName.truncated)
         verify(firstLastCard.width > 330)
         verify(firstLastCard.height > 220)

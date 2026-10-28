@@ -227,6 +227,7 @@ QtObject {
             "workspace": safeString(value.workspace, "", 96),
             "repository": safeString(value.repository, "", 96),
             "worktree": safeString(value.worktree, "", 128),
+            "branch": safeString(value.branch, "", 64),
             "session": safeString(value.session, "", 64),
             "focused": value.focused === true,
             "launch_pending": value.launch_pending === true,

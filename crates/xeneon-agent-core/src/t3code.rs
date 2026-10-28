@@ -302,6 +302,7 @@ impl T3codeClient {
                     .as_deref()
                     .and_then(path_leaf)
                     .map(|leaf| sanitize(leaf, MAX_LABEL_CHARS)),
+                branch: None,
                 session: SESSION_NAME.into(),
                 focused: false,
                 observed_for_seconds: 0,

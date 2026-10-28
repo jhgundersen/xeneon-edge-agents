@@ -2466,6 +2466,7 @@ mod tests {
             workspace: "workspace".into(),
             repository: None,
             worktree: None,
+            branch: None,
             session: "default".into(),
             focused,
             observed_for_seconds: 0,
