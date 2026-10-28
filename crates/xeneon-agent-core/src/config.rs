@@ -94,6 +94,9 @@ pub const MAX_CARD_TABLES: usize = 6;
 pub struct BasecampConfig {
     /// The Basecamp CLI, already signed in by the user.
     pub bin: PathBuf,
+    /// Named CLI profile (`basecamp profile list`) whose identity the
+    /// dashboard reads as; the CLI's default profile when unset.
+    pub profile: Option<String>,
     /// Card tables the Basecamp dashboard can browse, in switcher order.
     pub card_tables: Vec<CardTableConfig>,
 }
@@ -102,6 +105,7 @@ impl Default for BasecampConfig {
     fn default() -> Self {
         Self {
             bin: PathBuf::from("basecamp"),
+            profile: None,
             card_tables: Vec::new(),
         }
     }
@@ -378,6 +382,19 @@ impl Config {
         if self.basecamp.bin.as_os_str().is_empty() {
             anyhow::bail!("basecamp.bin must not be empty");
         }
+        if let Some(profile) = &self.basecamp.profile {
+            let valid = !profile.is_empty()
+                && profile.len() <= 64
+                && !profile.starts_with('-')
+                && profile
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"_.-".contains(&byte));
+            if !valid {
+                anyhow::bail!(
+                    "basecamp.profile must be 1-64 letters, digits, '_', '.', or '-' and not start with '-'"
+                );
+            }
+        }
         if self.basecamp.card_tables.len() > MAX_CARD_TABLES {
             anyhow::bail!("basecamp.card_tables allows at most {MAX_CARD_TABLES} tables");
         }
@@ -604,7 +621,18 @@ mod tests {
         let loaded = Config::load_with_runtime_output(Some(&config_path), None).unwrap();
         assert_eq!(loaded.basecamp.card_tables[0].card_table, 2);
         assert_eq!(loaded.basecamp.bin, PathBuf::from("basecamp"));
+        assert_eq!(loaded.basecamp.profile, None);
         loaded.validate().unwrap();
+        for (profile, valid) in [
+            ("jonh", true),
+            ("jonh_ki", true),
+            ("--help", false),
+            ("a b", false),
+        ] {
+            let mut config = loaded.clone();
+            config.basecamp.profile = Some(profile.into());
+            assert_eq!(config.validate().is_ok(), valid, "{profile}");
+        }
 
         fs::write(&dashboards_path, "dashboards = [\"myspace\"]\n").unwrap();
         assert!(Config::load_with_runtime_output(Some(&config_path), None).is_err());

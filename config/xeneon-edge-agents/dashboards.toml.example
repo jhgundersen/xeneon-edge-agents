@@ -11,6 +11,11 @@
 
 dashboards = ["agents", "basecamp", "spotify"]
 
+[basecamp]
+# Optional named Basecamp CLI profile (`basecamp profile list`) the dashboard
+# reads as. Without it the CLI's default profile is used.
+# profile = "work"
+
 # Card tables the Basecamp dashboard can switch between (at most 6). Find the
 # ids with: basecamp projects list --agent --jq '[.[] | {id, name, tables:
 #   [.dock[]? | select(.name == "kanban_board") | {id, title}]}]'

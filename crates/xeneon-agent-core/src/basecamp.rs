@@ -208,6 +208,14 @@ impl BasecampClient {
         let output = timeout(
             COMMAND_TIMEOUT,
             Command::new(&self.config.bin)
+                .args(
+                    self.config
+                        .profile
+                        .as_deref()
+                        .map(|profile| ["--profile", profile])
+                        .into_iter()
+                        .flatten(),
+                )
                 .args(args)
                 .args(["--agent", "--jq", jq])
                 .env("BASECAMP_NONINTERACTIVE", "1")
@@ -308,6 +316,7 @@ esac
     fn client(bin: PathBuf) -> BasecampClient {
         BasecampClient::new(BasecampConfig {
             bin,
+            profile: None,
             card_tables: vec![CardTableConfig {
                 label: "Sprint".into(),
                 project: 43_666_346,
@@ -343,6 +352,27 @@ esac
         assert!(!sample.urls.contains_key("12"));
         let published = serde_json::to_string(snapshot).unwrap();
         assert!(!published.contains("https://"));
+    }
+
+    #[tokio::test]
+    async fn a_configured_profile_is_passed_to_every_call() {
+        let temp = tempfile::tempdir().unwrap();
+        let log = temp.path().join("args.log");
+        let bin = temp.path().join("basecamp");
+        fs::write(
+            &bin,
+            format!("#!/bin/sh\necho \"$@\" >> {}\nexit 1\n", log.display()),
+        )
+        .unwrap();
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o700)).unwrap();
+        let mut client = client(bin);
+        client.config.profile = Some("jonh".into());
+        client.sample().await;
+        let calls = fs::read_to_string(&log).unwrap();
+        assert!(
+            calls.starts_with("--profile jonh notifications list"),
+            "{calls}"
+        );
     }
 
     #[tokio::test]
