@@ -274,7 +274,8 @@ TestCase {
 
     function test_dashboardTabsSelectDashboardsAndHideAgentControls() {
         var title = findChild(portal, "dashboardTitle")
-        compare(findChild(portal, "dashboardTab_agents"), null)
+        // A lone dashboard still gets its tab: it is the order switch.
+        verify(findChild(portal, "dashboardTab_agents") !== null)
         verify(portal.agentsDashboard)
 
         mockStore.dashboards = ["agents", "spotify"]
@@ -292,7 +293,6 @@ TestCase {
         verify(spotifyTab.selected && !agentsTab.selected)
         verify(title.text.indexOf("// NOW PLAYING") > 0)
         verify(!mockActivity.ambientAllowed)
-        verify(!findChild(portal, "agentOrderToggle").visible)
 
         verify(agentsTab.activate())
         compare(portal.currentDashboard, "agents")
@@ -332,10 +332,9 @@ TestCase {
 
     function test_dashboardTabsOrderAndPageDotsFitBesideTheStatusRow() {
         var actions = findChild(portal, "headerActions")
-        var order = findChild(portal, "agentOrderToggle")
         var dots = findChild(portal, "pageDots")
         var status = findChild(portal, "headerStatus")
-        mockStore.dashboards = ["agents", "basecamp", "spotify"]
+        mockStore.dashboards = ["agents", "basecamp", "spotify", "slack"]
         mockStore.agents = agents(20)
         mockStore.agentOrder = {"available": true, "mode": "priority"}
         tryCompare(portal, "pageCount", 2)
@@ -343,7 +342,7 @@ TestCase {
         // Headless windows report the portal invisible, so the Row may not
         // lay out items that appear later; add up the slots instead.
         var tabs = portal.dashboards.length * (tab.width + actions.spacing)
-        var headerEnd = actions.x + tabs + order.width
+        var headerEnd = actions.x + tabs
         verify(headerEnd + 24 + dots.width < status.x)
     }
 
@@ -551,24 +550,23 @@ TestCase {
         verify(secondLastCard.y + secondLastCard.height <= secondGrid.height + 0.5)
     }
 
-    function test_agentOrderToggleUsesAuthoritativeHerdrModeOnce() {
-        var toggle = findChild(portal, "agentOrderToggle")
-        var label = findChild(portal, "agentOrderLabel")
-        verify(toggle !== null)
-        verify(label !== null)
-        verify(toggle.enabled)
-        compare(label.text, "ORDER // GROUPED")
+    function test_agentsTabShowsPriorityFirstThenTogglesOrderOnce() {
+        mockStore.dashboards = ["agents", "spotify"]
+        mockStore.spotify = {"available": true, "status": "paused"}
+        mockPreferences.dashboard = "spotify"
+        wait(0)
+        var tab = findChild(portal, "dashboardTab_agents")
+        compare(tab.detail.indexOf("GROUPED"), 0)
 
-        verify(toggle.activate())
+        // Arriving on the agent dashboard asks for Priority first.
+        verify(tab.activate())
+        compare(portal.currentDashboard, "agents")
         compare(mockBridge.orderRequests, 1)
         compare(mockBridge.lastOrder, "priority")
-        verify(!toggle.enabled)
-        compare(label.text, "ORDER // SYNCING")
-        compare(toggle.Accessible.name, "Agent ordering syncing")
-        compare(
-            toggle.Accessible.description,
-            "Synchronizing agent ordering with Herdr"
-        )
+        compare(tab.detail.indexOf("SYNCING"), 0)
+        // A tap while the request is in flight does nothing.
+        tab.activate()
+        compare(mockBridge.orderRequests, 1)
 
         mockStore.actionResultReceived({
             "request_id": "order-1",
@@ -579,10 +577,25 @@ TestCase {
         })
         compare(portal.pendingAgentOrderRequest, "")
         mockStore.agentOrder = {"available": true, "mode": "priority"}
-        compare(label.text, "ORDER // PRIORITY")
-        verify(toggle.activate())
+        compare(tab.detail.indexOf("PRIORITY"), 0)
+
+        // Each further tap flips the order.
+        verify(tab.activate())
         compare(mockBridge.orderRequests, 2)
         compare(mockBridge.lastOrder, "grouped")
+    }
+
+    function test_headerTabsKeepTheirPlaceWhateverTheTitleLength() {
+        var actions = findChild(portal, "headerActions")
+        var x = actions.x
+        portal.hostName = "a-very-long-hostname-that-would-push-things"
+        wait(0)
+        compare(actions.x, x)
+        portal.hostName = "X"
+        wait(0)
+        compare(actions.x, x)
+        verify(findChild(portal, "dashboardTitle").truncated === false)
+        portal.hostName = "LOCAL"
     }
 
     function test_lowerCountsAndShrinkClampSafely() {

@@ -139,9 +139,9 @@ running.
 In Grouped order the cards are drawn as one lane per Herdr workspace, with the
 workspace name above each lane; Priority order keeps the flat attention grid. The Micro control opens a read-only virtual
 projection of the connected device and current agent slots.
-The Order control reads and writes Herdr's own grouped/priority setting, so the
-Herdr Agents panel and EDGE cards stay synchronized instead of keeping separate
-preferences.
+Tapping the AGENTS tab switches ordering: arriving shows Priority, and each
+further tap flips between Grouped and Priority. With Herdr's fork the value is
+Herdr's own setting; with stock Herdr the daemon keeps it.
 The upper-right Motion and Screen controls are shared by the command-center
 and Ambient views. Motion snaps the ambient constellation to fixed positions
 and removes trail animation; Screen applies a reversible near-black

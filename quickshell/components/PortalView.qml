@@ -26,6 +26,7 @@ Item {
             ? String(preferences.dashboard)
             : dashboards[0]
     readonly property bool agentsDashboard: currentDashboard === "agents"
+    readonly property real identityTextWidth: 360
     // Grouped ordering renders one lane per workspace. Lanes keep the grid's
     // two-row card size and pack whole lanes onto pages of the same width.
     readonly property bool laneLayout:
@@ -201,6 +202,18 @@ Item {
     function selectDashboard(dashboard) {
         if (dashboards.indexOf(dashboard) === -1)
             return false
+        // The AGENTS tab doubles as the order switch: arriving shows
+        // Priority, and each further tap flips between Grouped and Priority.
+        if (dashboard === "agents") {
+            if (agentOrderAvailable && pendingAgentOrderRequest === "") {
+                if (agentsDashboard)
+                    requestAgentOrder(agentOrderMode === "priority" ? "grouped" : "priority")
+                else if (agentOrderMode !== "priority")
+                    requestAgentOrder("priority")
+            } else if (agentsDashboard) {
+                return false
+            }
+        }
         preferences.dashboard = dashboard
         if (typeof preferences.sync === "function")
             preferences.sync()
@@ -229,6 +242,9 @@ Item {
                 return "OFFLINE"
             return store.slack.notifications.length + " FOR YOU"
         }
+        var order = pendingAgentOrderRequest !== ""
+            ? "SYNCING  ·  "
+            : agentOrderAvailable ? agentOrderMode.toUpperCase() + "  ·  " : ""
         var working = 0
         var waiting = 0
         for (var index = 0; index < store.agents.length; index += 1) {
@@ -237,7 +253,7 @@ Item {
             else if (store.agents[index].status === "blocked")
                 waiting += 1
         }
-        return waiting > 0 ? waiting + " WAITING" : working + " WORKING"
+        return order + (waiting > 0 ? waiting + " WAITING" : working + " WORKING")
     }
 
     function dashboardAccent(dashboard) {
@@ -506,6 +522,9 @@ Item {
 
                 Text {
                     objectName: "dashboardTitle"
+                    // Fixed width so the tabs never move with the title.
+                    width: root.identityTextWidth
+                    elide: Text.ElideRight
                     text: String(root.hostName || "LOCAL").toUpperCase()
                         + " // " + root.dashboardTitle(root.currentDashboard)
                     textFormat: Text.PlainText
@@ -519,6 +538,8 @@ Item {
                 }
 
                 Text {
+                    width: root.identityTextWidth
+                    elide: Text.ElideRight
                     text: root.attentionSummary()
                     textFormat: Text.PlainText
                     color: root.theme.textMuted
@@ -543,7 +564,7 @@ Item {
 
             // One tab per enabled dashboard, in configured order.
             Repeater {
-                model: root.dashboards.length > 1 ? root.dashboards : []
+                model: root.dashboards
 
                 DashboardTab {
                     required property var modelData
@@ -561,83 +582,6 @@ Item {
                 }
             }
 
-            Rectangle {
-                id: agentOrderToggle
-                objectName: "agentOrderToggle"
-
-                width: 184
-                height: 48
-                radius: 12
-                visible: root.agentsDashboard
-                color: orderTap.pressed
-                    ? root.theme.surfacePressed
-                    : root.theme.surfaceRaised
-                border.width: 1
-                border.color: root.agentOrderAvailable
-                    ? root.theme.accent
-                    : root.theme.border
-                enabled: root.controlCenterInteractive
-                    && root.agentOrderAvailable
-                    && root.pendingAgentOrderRequest === ""
-
-                function activate() {
-                    if (!enabled)
-                        return false
-                    root.activity.noteUserActivity()
-                    return root.requestAgentOrder(
-                        root.agentOrderMode === "grouped"
-                            ? "priority"
-                            : "grouped"
-                    )
-                }
-
-                Accessible.role: Accessible.Button
-                // Disabled status is still meaningful: expose why synchronization
-                // is unavailable or currently in progress to assistive technology.
-                Accessible.ignored: false
-                Accessible.name: root.pendingAgentOrderRequest !== ""
-                    ? "Agent ordering syncing"
-                    : root.agentOrderAvailable
-                        ? "Agent ordering " + root.agentOrderMode
-                        : "Agent ordering unavailable"
-                Accessible.description: root.pendingAgentOrderRequest !== ""
-                    ? "Synchronizing agent ordering with " + root.managerName
-                    : root.agentOrderAvailable
-                        ? "Switch " + root.managerName
-                        + " and the command center to "
-                        + (root.agentOrderMode === "grouped"
-                            ? "priority"
-                            : "grouped") + " ordering"
-                        : "Requires a " + root.managerName
-                        + " version with agent ordering API support"
-                Accessible.onPressAction: activate()
-
-                Text {
-                    objectName: "agentOrderLabel"
-                    anchors.centerIn: parent
-                    text: root.pendingAgentOrderRequest !== ""
-                        ? "ORDER // SYNCING"
-                        : root.agentOrderAvailable
-                            ? "ORDER // " + root.agentOrderMode.toUpperCase()
-                            : "ORDER // UNAVAILABLE"
-                    textFormat: Text.PlainText
-                    color: root.agentOrderAvailable
-                        ? root.theme.textPrimary
-                        : root.theme.textMuted
-                    font {
-                        family: "monospace"
-                        pixelSize: 11
-                        weight: Font.DemiBold
-                        letterSpacing: 0.5
-                    }
-                }
-
-                TapHandler {
-                    id: orderTap
-                    gesturePolicy: TapHandler.ReleaseWithinBounds
-                    onTapped: agentOrderToggle.activate()
-                }
-            }
 
         }
 
