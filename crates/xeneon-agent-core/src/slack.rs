@@ -282,6 +282,12 @@ impl SlackClient {
                 .await;
             let images = self.images(api, cache, message).await;
             let reactions = reactions(message);
+            // A file-only post would otherwise render as an empty message.
+            let text = if text.trim().is_empty() && images.is_empty() {
+                file_summary(message)
+            } else {
+                text
+            };
             let item_id = format!("{id}-{ts}");
             urls.insert(item_id.clone(), deep_link(identity, id, ts));
             messages.push(SlackMessage {
@@ -699,6 +705,19 @@ impl Api<'_> {
     }
 }
 
+/// "📎 name" for each attached file, used when a message has no text and
+/// no thumbnail could be shown.
+fn file_summary(message: &Value) -> String {
+    let names: Vec<String> = message["files"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|file| file["title"].as_str().or_else(|| file["name"].as_str()))
+        .map(|name| format!("📎 {}", bounded(name, 80)))
+        .collect();
+    names.join("  ")
+}
+
 fn reactions(message: &Value) -> Vec<SlackReaction> {
     message["reactions"]
         .as_array()
@@ -1014,6 +1033,16 @@ esac
                 ("👋".to_owned(), 2)
             ]
         );
+    }
+
+    #[test]
+    fn file_only_posts_name_their_files() {
+        let message = serde_json::json!({"files": [
+            {"name": "skjerm.png", "title": "Skjermbilde"},
+            {"name": "notes.txt"}
+        ]});
+        assert_eq!(file_summary(&message), "📎 Skjermbilde  📎 notes.txt");
+        assert_eq!(file_summary(&serde_json::json!({})), "");
     }
 
     #[test]
