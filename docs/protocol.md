@@ -156,6 +156,12 @@ The only actions are:
   agent, capability, or `app_id` and make the matching fixed MPRIS call on
   the Spotify desktop client. They are refused unless `spotify` is listed in
   the snapshot's `dashboards`.
+- `basecamp_open`: takes no agent, capability, or `app_id` and requires
+  `item_id`, a numeric id of a notification or card in the current
+  `basecamp` snapshot. Snapshots never carry URLs; the daemon looks the id up
+  in its own last Basecamp sample and opens only `app.basecamp.com` or
+  `3.basecamp.com` links in the default browser. `item_id` is rejected on
+  every other action.
 - `desktop_app`: takes no agent or capability and requires `app_id`, one of
   the ids in the snapshot's `desktop_apps` (0-4 entries from the daemon's
   `desktop-apps.toml` or `[[desktop.apps]]` configuration). The daemon focuses the single exact

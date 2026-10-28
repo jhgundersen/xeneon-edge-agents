@@ -26,6 +26,7 @@
         "spotify_play_pause",
         "spotify_next",
         "spotify_previous",
+        "basecamp_open",
         "voice_start",
         "voice_stop",
         "voice_cancel",
@@ -46,7 +47,80 @@
         "switchable": { "type": "boolean" }
       }
     },
-    "dashboard": { "enum": ["agents", "spotify"] },
+    "dashboard": { "enum": ["agents", "spotify", "basecamp"] },
+    "basecampId": { "type": "string", "pattern": "^[0-9]{1,20}$" },
+    "basecamp": {
+      "type": "object",
+      "required": ["available"],
+      "properties": {
+        "available": { "type": "boolean" },
+        "unread_count": { "type": "integer", "minimum": 0 },
+        "unreads_capped": { "type": "boolean" },
+        "notifications": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": ["id", "kind", "title", "project", "creator", "unread_at"],
+            "properties": {
+              "id": { "$ref": "#/$defs/basecampId" },
+              "kind": { "enum": ["comment", "announcement", "done", "boost", "update"] },
+              "title": { "type": "string", "maxLength": 160 },
+              "project": { "type": "string", "maxLength": 48 },
+              "creator": { "type": "string", "maxLength": 48 },
+              "unread_at": { "type": "string", "maxLength": 40 }
+            }
+          }
+        },
+        "boards": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "required": ["label", "available", "lanes", "not_now", "done"],
+            "properties": {
+              "label": { "type": "string", "maxLength": 24 },
+              "available": { "type": "boolean" },
+              "not_now": { "type": "integer", "minimum": 0 },
+              "done": { "type": "integer", "minimum": 0 },
+              "lanes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["title", "color", "total", "cards"],
+                  "properties": {
+                    "title": { "type": "string", "maxLength": 48 },
+                    "color": {
+                      "enum": ["accent", "red", "orange", "yellow", "green", "blue", "cyan", "magenta"]
+                    },
+                    "total": { "type": "integer", "minimum": 0 },
+                    "cards": {
+                      "type": "array",
+                      "maxItems": 12,
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "title", "assignees", "comments"],
+                        "properties": {
+                          "id": { "$ref": "#/$defs/basecampId" },
+                          "title": { "type": "string", "maxLength": 160 },
+                          "assignees": {
+                            "type": "array",
+                            "maxItems": 4,
+                            "items": { "type": "string", "maxLength": 48 }
+                          },
+                          "due_on": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+                          "comments": { "type": "integer", "minimum": 0 }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "spotify": {
       "type": "object",
       "required": ["available"],
@@ -318,6 +392,7 @@
           "items": { "$ref": "#/$defs/dashboard" }
         },
         "spotify": { "$ref": "#/$defs/spotify" },
+        "basecamp": { "$ref": "#/$defs/basecamp" },
         "desktop_apps": {
           "type": "array",
           "maxItems": 4,
@@ -376,7 +451,8 @@
         "agent_id": { "type": "string", "minLength": 1 },
         "action": { "$ref": "#/$defs/actionKind" },
         "capability_id": { "type": "string", "minLength": 1 },
-        "app_id": { "type": "string", "pattern": "^[a-z0-9-]{1,32}$" }
+        "app_id": { "type": "string", "pattern": "^[a-z0-9-]{1,32}$" },
+        "item_id": { "$ref": "#/$defs/basecampId" }
       }
     }
   }

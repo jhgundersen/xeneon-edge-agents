@@ -223,7 +223,7 @@ class QmlSafetyContractTests(unittest.TestCase):
         self.assertIn("snapshotSequence: root.store.sequence", portal)
         self.assertIn("restoreFocus(sequence)", portal)
         self.assertIn(
-            "function build(action, agentId, capabilityId, pinnedSequence, appId)",
+            "function build(action, agentId, capabilityId, pinnedSequence, appId, itemId)",
             builder,
         )
         self.assertNotIn("property double snapshotSequence", builder)

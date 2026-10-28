@@ -124,7 +124,10 @@ More than one dashboard can be enabled per machine in
 `~/.config/xeneon-edge-agents/dashboards.toml` (see
 `config/xeneon-edge-agents/dashboards.toml.example`); the header's VIEW toggle
 cycles through them. Besides the agent command center there is a Spotify
-now-playing dashboard with play/pause, next, and previous.
+now-playing dashboard with play/pause, next, and previous, and a Basecamp
+dashboard that shows configured card tables as lanes next to the Hey! inbox,
+read through the signed-in Basecamp CLI; tapping a card or item opens it in
+the browser.
 Header controls focus or launch 0-4 desktop apps configured per machine in
 `~/.config/xeneon-edge-agents/desktop-apps.toml` (Spotify and Discord when the
 file is absent); see `config/xeneon-edge-agents/desktop-apps.toml.example`.

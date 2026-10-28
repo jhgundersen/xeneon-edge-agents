@@ -77,6 +77,7 @@ pub enum ActionKind {
     SpotifyPlayPause,
     SpotifyNext,
     SpotifyPrevious,
+    BasecampOpen,
     VoiceStart,
     VoiceStop,
     VoiceCancel,
@@ -93,6 +94,7 @@ pub enum ActionKind {
 pub enum DashboardKind {
     Agents,
     Spotify,
+    Basecamp,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -121,6 +123,64 @@ pub struct SpotifySnapshot {
     pub can_control: bool,
     pub can_go_next: bool,
     pub can_go_previous: bool,
+}
+
+/// One unread item from the Basecamp Hey! inbox. Its URL stays in the
+/// daemon; the portal opens it by `id` with `basecamp_open`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BasecampNotification {
+    pub id: String,
+    pub kind: String,
+    pub title: String,
+    pub project: String,
+    pub creator: String,
+    /// RFC 3339 time the item became unread.
+    pub unread_at: String,
+}
+
+/// One card in a card table lane. Its URL stays in the daemon; the portal
+/// opens it by `id` with `basecamp_open`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BasecampCard {
+    pub id: String,
+    pub title: String,
+    pub assignees: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub due_on: Option<String>,
+    pub comments: u32,
+}
+
+/// A card table column shown as a lane. `cards` is capped; `total` is the
+/// column's full open-card count.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BasecampLane {
+    pub title: String,
+    /// Theme color role derived from the Basecamp column color.
+    pub color: String,
+    pub total: u32,
+    pub cards: Vec<BasecampCard>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BasecampBoard {
+    pub label: String,
+    pub available: bool,
+    pub lanes: Vec<BasecampLane>,
+    pub not_now: u32,
+    pub done: u32,
+}
+
+/// The signed-in person's Basecamp Hey! inbox and configured card tables,
+/// read through the Basecamp CLI. `available` is false when the CLI is
+/// missing or not signed in.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BasecampSnapshot {
+    pub available: bool,
+    pub unread_count: u32,
+    /// The server caps unreads at 100; the count is then a lower bound.
+    pub unreads_capped: bool,
+    pub notifications: Vec<BasecampNotification>,
+    pub boards: Vec<BasecampBoard>,
 }
 
 /// Which agent manager the daemon observes and routes agent actions to.
@@ -378,6 +438,9 @@ pub struct PortalSnapshot {
     /// Populated only while the Spotify dashboard is enabled.
     #[serde(default)]
     pub spotify: SpotifySnapshot,
+    /// Populated only while the Basecamp dashboard is enabled.
+    #[serde(default)]
+    pub basecamp: BasecampSnapshot,
     pub voice: VoiceSnapshot,
     pub usage: AiUsageSnapshot,
     pub micro: MicroSnapshot,
@@ -406,6 +469,7 @@ impl PortalSnapshot {
             desktop_apps: Vec::new(),
             dashboards: vec![DashboardKind::Agents],
             spotify: SpotifySnapshot::default(),
+            basecamp: BasecampSnapshot::default(),
             voice: VoiceSnapshot::default(),
             usage: AiUsageSnapshot::default(),
             micro: MicroSnapshot::default(),
@@ -428,6 +492,9 @@ pub struct PortalCommand {
     /// Configured `desktop.apps` id; accepted only by `desktop_app`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app_id: Option<String>,
+    /// Published Basecamp notification id; accepted only by `basecamp_open`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

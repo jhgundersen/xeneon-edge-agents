@@ -35,6 +35,7 @@ QtObject {
     // Enabled dashboards in order; the daemon always lists at least one.
     property var dashboards: ["agents"]
     property var spotify: ({"available": false})
+    property var basecamp: ({"available": false})
     property var health: ({})
     property var voice: ({
         "available": false,
@@ -117,6 +118,7 @@ QtObject {
         desktopApps = []
         dashboards = ["agents"]
         spotify = {"available": false}
+        basecamp = {"available": false}
         health = {}
         voice = {
             "available": false,
@@ -314,7 +316,7 @@ QtObject {
     }
 
     function normalizeDashboards(value) {
-        var known = ["agents", "spotify"]
+        var known = ["agents", "spotify", "basecamp"]
         var result = []
         if (Array.isArray(value)) {
             for (var index = 0; index < value.length; index += 1) {
@@ -349,6 +351,94 @@ QtObject {
             "can_control": value.can_control === true,
             "can_go_next": value.can_go_next === true,
             "can_go_previous": value.can_go_previous === true
+        }
+    }
+
+    // Basecamp items carry no URLs; ids are numeric and only ever sent back
+    // to the daemon, which owns the links.
+    function normalizeBasecamp(value) {
+        if (value === null || typeof value !== "object" || value.available !== true)
+            return {"available": false}
+        var laneRoles = [
+            "accent", "red", "orange", "yellow", "green", "blue", "cyan",
+            "magenta"
+        ]
+        var kinds = ["comment", "announcement", "done", "boost", "update"]
+        function itemId(id) {
+            var text = safeString(id, "", 20)
+            return /^[0-9]{1,20}$/.test(text) ? text : ""
+        }
+        function count(number) {
+            return Math.max(0, Math.floor(finiteNumber(number, 0)))
+        }
+        var notifications = []
+        var sourceNotifications = Array.isArray(value.notifications)
+            ? value.notifications
+            : []
+        for (var n = 0; n < sourceNotifications.length && n < 8; n += 1) {
+            var item = sourceNotifications[n] || {}
+            var id = itemId(item.id)
+            if (id === "")
+                continue
+            var kind = safeString(item.kind, "update", 16)
+            notifications.push({
+                "id": id,
+                "kind": kinds.indexOf(kind) === -1 ? "update" : kind,
+                "title": safeString(item.title, "", 160),
+                "project": safeString(item.project, "", 48),
+                "creator": safeString(item.creator, "", 48),
+                "unread_at": safeString(item.unread_at, "", 40)
+            })
+        }
+        var boards = []
+        var sourceBoards = Array.isArray(value.boards) ? value.boards : []
+        for (var b = 0; b < sourceBoards.length && b < 6; b += 1) {
+            var board = sourceBoards[b] || {}
+            var lanes = []
+            var sourceLanes = Array.isArray(board.lanes) ? board.lanes : []
+            for (var l = 0; l < sourceLanes.length && l < 8; l += 1) {
+                var lane = sourceLanes[l] || {}
+                var cards = []
+                var sourceCards = Array.isArray(lane.cards) ? lane.cards : []
+                for (var c = 0; c < sourceCards.length && c < 12; c += 1) {
+                    var card = sourceCards[c] || {}
+                    var cardId = itemId(card.id)
+                    if (cardId === "")
+                        continue
+                    cards.push({
+                        "id": cardId,
+                        "title": safeString(card.title, "", 160),
+                        "assignees": (Array.isArray(card.assignees) ? card.assignees : [])
+                            .slice(0, 4)
+                            .map(function(name) { return safeString(name, "", 48) }),
+                        "due_on": /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(String(card.due_on || ""))
+                            ? String(card.due_on)
+                            : "",
+                        "comments": count(card.comments)
+                    })
+                }
+                var color = safeString(lane.color, "accent", 16)
+                lanes.push({
+                    "title": safeString(lane.title, "", 48),
+                    "color": laneRoles.indexOf(color) === -1 ? "accent" : color,
+                    "total": Math.max(count(lane.total), cards.length),
+                    "cards": cards
+                })
+            }
+            boards.push({
+                "label": safeString(board.label, "", 24),
+                "available": board.available === true,
+                "lanes": lanes,
+                "not_now": count(board.not_now),
+                "done": count(board.done)
+            })
+        }
+        return {
+            "available": true,
+            "unread_count": count(value.unread_count),
+            "unreads_capped": value.unreads_capped === true,
+            "notifications": notifications,
+            "boards": boards
         }
     }
 
@@ -807,6 +897,7 @@ QtObject {
         desktopApps = normalizeDesktopApps(snapshot.desktop_apps)
         dashboards = normalizeDashboards(snapshot.dashboards)
         spotify = normalizeSpotify(snapshot.spotify)
+        basecamp = normalizeBasecamp(snapshot.basecamp)
         var nextSignature = semanticSignature(
             nextConnection,
             nextAgents,

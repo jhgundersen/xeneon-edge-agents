@@ -20,6 +20,10 @@ pub enum CommandError {
     MissingAppId,
     #[error("app_id is not accepted for this action")]
     UnexpectedAppId,
+    #[error("item_id is required for basecamp_open")]
+    MissingItemId,
+    #[error("item_id is not accepted for this action")]
+    UnexpectedItemId,
 }
 
 pub fn validate_command(command: &PortalCommand) -> Result<(), CommandError> {
@@ -39,12 +43,22 @@ pub fn validate_command(command: &PortalCommand) -> Result<(), CommandError> {
         (_, Some(_)) => return Err(CommandError::UnexpectedAppId),
     }
 
+    match (command.action, command.item_id.as_deref()) {
+        (ActionKind::BasecampOpen, Some(id))
+            if !id.is_empty() && id.len() <= 20 && id.bytes().all(|byte| byte.is_ascii_digit()) => {
+        }
+        (ActionKind::BasecampOpen, _) => return Err(CommandError::MissingItemId),
+        (_, None) => {}
+        (_, Some(_)) => return Err(CommandError::UnexpectedItemId),
+    }
+
     match command.action {
         ActionKind::RestoreFocus
         | ActionKind::DesktopApp
         | ActionKind::SpotifyPlayPause
         | ActionKind::SpotifyNext
         | ActionKind::SpotifyPrevious
+        | ActionKind::BasecampOpen
         | ActionKind::VoiceStart
         | ActionKind::VoiceStop
         | ActionKind::VoiceCancel
@@ -107,6 +121,7 @@ mod tests {
             action,
             capability_id: None,
             app_id: None,
+            item_id: None,
         }
     }
 
@@ -160,6 +175,26 @@ mod tests {
         assert_eq!(
             validate_command(&command),
             Err(CommandError::UnexpectedCapability)
+        );
+    }
+
+    #[test]
+    fn basecamp_open_takes_only_a_numeric_item_id() {
+        let mut command = command(ActionKind::BasecampOpen);
+        command.agent_id = None;
+        assert_eq!(validate_command(&command), Err(CommandError::MissingItemId));
+        for bad in ["", "12a", "../1", "123456789012345678901"] {
+            command.item_id = Some(bad.into());
+            assert_eq!(validate_command(&command), Err(CommandError::MissingItemId));
+        }
+        command.item_id = Some("9711341101".into());
+        assert_eq!(validate_command(&command), Ok(()));
+
+        let mut other = command.clone();
+        other.action = ActionKind::VoiceStart;
+        assert_eq!(
+            validate_command(&other),
+            Err(CommandError::UnexpectedItemId)
         );
     }
 

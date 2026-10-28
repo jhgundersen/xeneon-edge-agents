@@ -29,6 +29,7 @@ pub struct Config {
     /// Enabled dashboards in switcher order. Usually set per machine in
     /// `dashboards.toml` beside this file.
     pub dashboards: Vec<DashboardKind>,
+    pub basecamp: BasecampConfig,
     pub t3code: T3codeConfig,
 }
 
@@ -82,6 +83,39 @@ pub const MAX_DASHBOARDS: usize = 6;
 #[serde(deny_unknown_fields)]
 struct DashboardsFile {
     dashboards: Vec<DashboardKind>,
+    #[serde(default)]
+    basecamp: Option<BasecampConfig>,
+}
+
+pub const MAX_CARD_TABLES: usize = 6;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct BasecampConfig {
+    /// The Basecamp CLI, already signed in by the user.
+    pub bin: PathBuf,
+    /// Card tables the Basecamp dashboard can browse, in switcher order.
+    pub card_tables: Vec<CardTableConfig>,
+}
+
+impl Default for BasecampConfig {
+    fn default() -> Self {
+        Self {
+            bin: PathBuf::from("basecamp"),
+            card_tables: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CardTableConfig {
+    /// Switcher text, at most 24 characters.
+    pub label: String,
+    /// Basecamp project (bucket) id.
+    pub project: u64,
+    /// Card table id within that project.
+    pub card_table: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -197,6 +231,7 @@ impl Default for Config {
             screen: ScreenConfig::default(),
             desktop: DesktopConfig::default(),
             dashboards: vec![DashboardKind::Agents],
+            basecamp: BasecampConfig::default(),
             t3code: T3codeConfig::default(),
         }
     }
@@ -254,6 +289,9 @@ impl Config {
             let file: DashboardsFile = toml::from_str(&contents)
                 .with_context(|| format!("parsing {}", dashboards_path.display()))?;
             config.dashboards = file.dashboards;
+            if let Some(basecamp) = file.basecamp {
+                config.basecamp = basecamp;
+            }
         }
         config.apply_runtime_output(runtime_output)?;
         Ok(config)
@@ -335,6 +373,18 @@ impl Config {
         for (index, dashboard) in self.dashboards.iter().enumerate() {
             if self.dashboards[..index].contains(dashboard) {
                 anyhow::bail!("dashboards lists {dashboard:?} more than once");
+            }
+        }
+        if self.basecamp.bin.as_os_str().is_empty() {
+            anyhow::bail!("basecamp.bin must not be empty");
+        }
+        if self.basecamp.card_tables.len() > MAX_CARD_TABLES {
+            anyhow::bail!("basecamp.card_tables allows at most {MAX_CARD_TABLES} tables");
+        }
+        for table in &self.basecamp.card_tables {
+            let label = table.label.trim();
+            if label.is_empty() || label.chars().count() > 24 {
+                anyhow::bail!("basecamp.card_tables labels must be 1-24 characters");
             }
         }
         if self.desktop.apps.len() > MAX_DESKTOP_APPS {
@@ -542,6 +592,20 @@ mod tests {
             let loaded = Config::load_with_runtime_output(Some(&config_path), None).unwrap();
             assert!(loaded.validate().is_err(), "accepted: {invalid}");
         }
+        fs::write(
+            &dashboards_path,
+            concat!(
+                "dashboards = [\"basecamp\"]\n",
+                "[[basecamp.card_tables]]\n",
+                "label = \"Sprint\"\nproject = 1\ncard_table = 2\n",
+            ),
+        )
+        .unwrap();
+        let loaded = Config::load_with_runtime_output(Some(&config_path), None).unwrap();
+        assert_eq!(loaded.basecamp.card_tables[0].card_table, 2);
+        assert_eq!(loaded.basecamp.bin, PathBuf::from("basecamp"));
+        loaded.validate().unwrap();
+
         fs::write(&dashboards_path, "dashboards = [\"myspace\"]\n").unwrap();
         assert!(Config::load_with_runtime_output(Some(&config_path), None).is_err());
     }
@@ -554,8 +618,13 @@ mod tests {
         .unwrap();
         assert_eq!(
             file.dashboards,
-            [DashboardKind::Agents, DashboardKind::Spotify]
+            [
+                DashboardKind::Agents,
+                DashboardKind::Basecamp,
+                DashboardKind::Spotify
+            ]
         );
+        assert_eq!(file.basecamp.unwrap().card_tables[0].label, "Sprint");
     }
 
     #[test]

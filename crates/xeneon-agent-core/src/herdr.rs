@@ -390,7 +390,8 @@ impl HerdrClient {
             | ActionKind::DesktopApp
             | ActionKind::SpotifyPlayPause
             | ActionKind::SpotifyNext
-            | ActionKind::SpotifyPrevious => {
+            | ActionKind::SpotifyPrevious
+            | ActionKind::BasecampOpen => {
                 bail!("action is owned by the desktop adapter")
             }
             ActionKind::VoiceStart | ActionKind::VoiceStop | ActionKind::VoiceCancel => {

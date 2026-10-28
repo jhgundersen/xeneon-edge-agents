@@ -84,7 +84,14 @@ QtObject {
         }
     }
 
-    function sendBuilt(action, agentId, capabilityId, pinnedSequence, appId) {
+    function sendBuilt(
+        action,
+        agentId,
+        capabilityId,
+        pinnedSequence,
+        appId,
+        itemId
+    ) {
         if (store.freshSnapshotRequired) {
             commandRejected("Waiting for a fresh snapshot")
             return ""
@@ -95,7 +102,8 @@ QtObject {
             agentId,
             capabilityId,
             pinnedSequence,
-            appId
+            appId,
+            itemId
         )
         if (command === null) {
             commandRejected(commandBuilder.lastError)
@@ -154,6 +162,10 @@ QtObject {
 
     function openDesktopApp(appId) {
         return sendBuilt("desktop_app", "", "", store.sequence, appId)
+    }
+
+    function openBasecampItem(itemId) {
+        return sendBuilt("basecamp_open", "", "", store.sequence, "", itemId)
     }
 
     function spotifyPlayPause() {

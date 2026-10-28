@@ -4,7 +4,17 @@
 # (systemctl --user restart xeneon-agentd). The installer never writes this
 # file. Without it only the agent command center is shown.
 #
-#   agents   Herdr / T3 Code agent command center
-#   spotify  Now playing in the Spotify desktop client, with controls
+#   agents    Herdr / T3 Code agent command center
+#   spotify   Now playing in the Spotify desktop client, with controls
+#   basecamp  Basecamp card tables as lanes plus the Hey! inbox, read through
+#             the signed-in Basecamp CLI (`basecamp login`)
 
-dashboards = ["agents", "spotify"]
+dashboards = ["agents", "basecamp", "spotify"]
+
+# Card tables the Basecamp dashboard can switch between (at most 6). Find the
+# ids with: basecamp projects list --agent --jq '[.[] | {id, name, tables:
+#   [.dock[]? | select(.name == "kanban_board") | {id, title}]}]'
+[[basecamp.card_tables]]
+label = "Sprint"
+project = 43666346
+card_table = 9711341101

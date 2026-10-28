@@ -21,3 +21,6 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths="@STATE_HOME@/xeneon-edge-agents" %t/xeneon-edge-agents
+# The Basecamp dashboard runs the user's signed-in Basecamp CLI, which may
+# refresh its token cache. Missing directories are ignored.
+ReadWritePaths=-%h/.cache/basecamp -%h/.local/state/basecamp

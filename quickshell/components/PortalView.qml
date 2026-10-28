@@ -189,7 +189,11 @@ Item {
     }
 
     function dashboardTitle(dashboard) {
-        return dashboard === "spotify" ? "NOW PLAYING" : "AGENT COMMAND"
+        if (dashboard === "spotify")
+            return "NOW PLAYING"
+        if (dashboard === "basecamp")
+            return "BASECAMP"
+        return "AGENT COMMAND"
     }
 
     function selectNextDashboard() {
@@ -1406,6 +1410,28 @@ Item {
         onNextRequested: root.bridge.spotifyNext()
         onPreviousRequested: root.bridge.spotifyPrevious()
         onOpenRequested: root.requestDesktop("spotify")
+    }
+
+    BasecampView {
+        objectName: "basecampDashboard"
+        anchors {
+            left: parent.left
+            right: parent.right
+            top: header.bottom
+            bottom: parent.bottom
+            leftMargin: 24
+            rightMargin: 24
+            topMargin: 8
+            bottomMargin: 16
+        }
+        visible: root.currentDashboard === "basecamp"
+        basecamp: root.store.basecamp
+        theme: root.theme
+        enabled: root.controlCenterInteractive
+        onInteracted: root.activity.noteUserActivity()
+        onOpenRequested: function(itemId) {
+            root.bridge.openBasecampItem(itemId)
+        }
     }
 
     // Other dashboards stay on screen instead of handing over to ambient.

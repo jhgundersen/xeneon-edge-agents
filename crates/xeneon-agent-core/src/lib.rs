@@ -1,3 +1,4 @@
+pub mod basecamp;
 pub mod config;
 pub mod desktop;
 pub mod health;

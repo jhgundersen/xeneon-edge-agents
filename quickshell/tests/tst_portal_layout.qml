@@ -22,6 +22,7 @@ TestCase {
         property var desktopApps: []
         property var dashboards: ["agents"]
         property var spotify: ({"available": false})
+        property var basecamp: ({"available": false})
         property var sessions: []
         property var usage: ({"providers": []})
         property var micro: ({"connected": false, "charging": false})
@@ -61,6 +62,11 @@ TestCase {
             return appId + "-" + next[appId]
         }
         property var spotifyCommands: []
+        property var basecampOpens: []
+        function openBasecampItem(itemId) {
+            basecampOpens = basecampOpens.concat([itemId])
+            return "bo"
+        }
         function spotifyPlayPause() { spotifyCommands = spotifyCommands.concat(["play_pause"]); return "sp" }
         function spotifyNext() { spotifyCommands = spotifyCommands.concat(["next"]); return "sn" }
         function spotifyPrevious() { spotifyCommands = spotifyCommands.concat(["previous"]); return "sv" }
@@ -156,6 +162,8 @@ TestCase {
         mockBridge.lastOrder = ""
         mockBridge.appRequests = ({})
         mockBridge.spotifyCommands = []
+        mockBridge.basecampOpens = []
+        mockStore.basecamp = {"available": false}
         mockStore.dashboards = ["agents"]
         mockStore.spotify = {"available": false}
         mockPreferences.dashboard = "agents"
@@ -337,6 +345,62 @@ TestCase {
         mockStore.spotify = Object.assign({}, playing, {"position_ms": 5000})
         wait(0)
         verify(view.positionMs < 6000)
+    }
+
+    function basecampSnapshot() {
+        function lane(title, color, count) {
+            var cards = []
+            for (var index = 0; index < count; index += 1)
+                cards.push({
+                    "id": String(100 + index), "title": title + " card " + index,
+                    "assignees": ["Kari Nordmann"], "due_on": "", "comments": 1
+                })
+            return {"title": title, "color": color, "total": count + 3, "cards": cards}
+        }
+        return {
+            "available": true, "unread_count": 30, "unreads_capped": false,
+            "notifications": [{
+                "id": "555", "kind": "comment", "title": "Re: Plan",
+                "project": "Produkt", "creator": "Ola",
+                "unread_at": new Date(Date.now() - 2 * 3600000).toISOString()
+            }],
+            "boards": [
+                {"label": "Sprint", "available": true, "not_now": 11, "done": 106,
+                 "lanes": [lane("Triage", "accent", 2), lane("Under arbeid", "yellow", 8)]},
+                {"label": "Bugs", "available": true, "not_now": 0, "done": 4,
+                 "lanes": [lane("Open", "red", 1)]}
+            ]
+        }
+    }
+
+    function test_basecampDashboardShowsLanesAndOpensItemsById() {
+        mockStore.dashboards = ["agents", "basecamp"]
+        mockPreferences.dashboard = "basecamp"
+        mockStore.basecamp = basecampSnapshot()
+        wait(0)
+        verify(findChild(portal, "dashboardTitle").text.indexOf("// BASECAMP") > 0)
+        compare(findChild(portal, "basecampUnread").text, "HEY!  //  30 UNREAD")
+        compare(findChild(portal, "basecampParked").text, "NOT NOW // 11    DONE // 106")
+        var lane = findChild(portal, "basecampLane_1")
+        verify(lane !== null)
+        // Cards that do not fit are counted, never squeezed.
+        verify(lane.shown >= 1 && lane.shown <= 8)
+        verify(lane.shown * 92 <= lane.height)
+
+        var card = findChild(portal, "basecampCard_0_1")
+        verify(card.activate())
+        var item = findChild(portal, "basecampNotification_0")
+        verify(item.activate())
+        compare(mockBridge.basecampOpens, ["101", "555"])
+
+        var view = findChild(portal, "basecampDashboard")
+        verify(findChild(portal, "basecampBoardTab_1").activate())
+        compare(view.boardIndex, 1)
+        compare(findChild(portal, "basecampParked").text, "NOT NOW // 0    DONE // 4")
+
+        mockStore.basecamp = {"available": false}
+        wait(0)
+        verify(view.boards.length === 0)
     }
 
     function test_priorityOrderKeepsTheFlatGrid() {

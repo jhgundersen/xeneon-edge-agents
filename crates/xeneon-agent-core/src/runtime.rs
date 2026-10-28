@@ -20,6 +20,7 @@ use uuid::Uuid;
 
 use crate::{
     Config,
+    basecamp::{BasecampClient, is_basecamp_url},
     desktop::{DesktopApp, DesktopAppOutcome, DesktopController},
     health::HealthCollector,
     herdr::{HerdrClient, HerdrTarget, SessionDescriptor},
@@ -40,6 +41,7 @@ use crate::{
 const INVALIDATION_COALESCE: Duration = Duration::from_millis(200);
 const SPOTIFY_REFRESH: Duration = Duration::from_millis(1_000);
 const SPOTIFY_POSITION_TOLERANCE_MS: u64 = 1_500;
+const BASECAMP_REFRESH: Duration = Duration::from_secs(60);
 const BACKEND_STATE_FILE_NAME: &str = "xeneon-edge-agents/agent-backend.toml";
 /// Invalidation key used when the portal switches agent managers.
 const BACKEND_SWITCH_INVALIDATION: &str = "\0backend";
@@ -138,6 +140,8 @@ struct RuntimeState {
     t3code_order: AgentOrderMode,
     herdr_order: AgentOrderMode,
     herdr_order_daemon_owned: bool,
+    /// URLs of published Basecamp items by id; never sent to the portal.
+    basecamp_urls: HashMap<String, String>,
     t3code_sequence: Option<u64>,
     targets: HashMap<String, AgentTarget>,
     observed: HashMap<String, ObservedAgent>,
@@ -169,6 +173,7 @@ pub struct DaemonRuntime {
     state: Arc<RwLock<RuntimeState>>,
     desktop: Arc<DesktopController>,
     spotify: SpotifyClient,
+    basecamp: BasecampClient,
     voice: Arc<Mutex<VoiceController>>,
     order_operation: Arc<Mutex<()>>,
     updates: watch::Sender<String>,
@@ -220,6 +225,7 @@ impl DaemonRuntime {
         let desktop = DesktopController::new(config.desktop.clone());
         let voice = VoiceController::from_config(&config, snapshot.daemon_epoch.clone())?;
         let t3code = T3codeClient::from_config(config.t3code.home.as_deref())?;
+        let basecamp = BasecampClient::new(config.basecamp.clone());
         Ok((
             Self {
                 herdr: HerdrClient::new(config.herdr_bin.clone()),
@@ -232,6 +238,7 @@ impl DaemonRuntime {
                     t3code_order: persisted.t3code_order,
                     herdr_order: persisted.herdr_order,
                     herdr_order_daemon_owned: false,
+                    basecamp_urls: HashMap::new(),
                     t3code_sequence: None,
                     targets: HashMap::new(),
                     observed: HashMap::new(),
@@ -241,6 +248,7 @@ impl DaemonRuntime {
                 })),
                 desktop: Arc::new(desktop),
                 spotify: SpotifyClient::default(),
+                basecamp,
                 voice: Arc::new(Mutex::new(voice)),
                 order_operation: Arc::new(Mutex::new(())),
                 updates,
@@ -301,6 +309,9 @@ impl DaemonRuntime {
         let mut voice_tick = interval(self.config.voice_refresh_interval());
         let mut micro_tick = interval(self.config.micro_refresh_interval());
         let spotify_enabled = self.config.dashboards.contains(&DashboardKind::Spotify);
+        let basecamp_enabled = self.config.dashboards.contains(&DashboardKind::Basecamp);
+        let mut basecamp_tick = interval(BASECAMP_REFRESH);
+        basecamp_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut spotify_tick = interval(SPOTIFY_REFRESH);
         let mut spotify_published_at = Instant::now();
         spotify_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -337,6 +348,17 @@ impl DaemonRuntime {
                         state.snapshot.generated_at_ms = now_ms();
                         drop(state);
                         spotify_published_at = Instant::now();
+                        self.publish().await;
+                    }
+                }
+                _ = basecamp_tick.tick(), if basecamp_enabled => {
+                    let sample = self.basecamp.sample().await;
+                    let mut state = self.state.write().await;
+                    state.basecamp_urls = sample.urls;
+                    if state.snapshot.basecamp != sample.snapshot {
+                        state.snapshot.basecamp = sample.snapshot;
+                        state.snapshot.generated_at_ms = now_ms();
+                        drop(state);
                         self.publish().await;
                     }
                 }
@@ -888,6 +910,44 @@ impl DaemonRuntime {
             };
         }
 
+        if command.action == ActionKind::BasecampOpen {
+            // The portal names a published item; the daemon resolves the URL
+            // from its own last sample and opens only Basecamp links.
+            let url = {
+                let state = self.state.read().await;
+                command
+                    .item_id
+                    .as_deref()
+                    .and_then(|id| state.basecamp_urls.get(id).cloned())
+            };
+            let Some(url) = url else {
+                return action_error(
+                    &command.request_id,
+                    "target_unavailable",
+                    "Basecamp item is no longer on the dashboard",
+                );
+            };
+            if !self.config.dashboards.contains(&DashboardKind::Basecamp) || !is_basecamp_url(&url)
+            {
+                return action_error(
+                    &command.request_id,
+                    "target_unavailable",
+                    "Basecamp item cannot be opened",
+                );
+            }
+            return match self.desktop.open_url(&url).await {
+                Ok(()) => action_ok(&command.request_id, "basecamp_item_opened"),
+                Err(error) => {
+                    tracing::warn!(%error, "Basecamp item open failed");
+                    action_error(
+                        &command.request_id,
+                        "target_unavailable",
+                        "Basecamp item could not be opened",
+                    )
+                }
+            };
+        }
+
         if command.action == ActionKind::DesktopApp {
             // The portal only names a configured shortcut; an unknown id is
             // refused before anything is focused or launched.
@@ -988,6 +1048,7 @@ impl DaemonRuntime {
             | ActionKind::SpotifyPlayPause
             | ActionKind::SpotifyNext
             | ActionKind::SpotifyPrevious
+            | ActionKind::BasecampOpen
             | ActionKind::VoiceStart
             | ActionKind::VoiceStop
             | ActionKind::VoiceCancel
@@ -1844,6 +1905,7 @@ mod tests {
                 action: ActionKind::OrderPriority,
                 capability_id: None,
                 app_id: None,
+                item_id: None,
             })
             .await;
 
@@ -1968,6 +2030,7 @@ mod tests {
                 action: ActionKind::OrderPriority,
                 capability_id: None,
                 app_id: None,
+                item_id: None,
             })
             .await;
 
@@ -2045,6 +2108,7 @@ mod tests {
             action: ActionKind::OrderPriority,
             capability_id: None,
             app_id: None,
+            item_id: None,
         };
         let first_runtime = runtime.clone();
         let first =
@@ -2061,6 +2125,7 @@ mod tests {
                     action: ActionKind::OrderPriority,
                     capability_id: None,
                     app_id: None,
+                    item_id: None,
                 })
                 .await
         });
@@ -2232,6 +2297,7 @@ mod tests {
             action: ActionKind::VoiceStart,
             capability_id: None,
             app_id: None,
+            item_id: None,
         };
 
         assert!(runtime.process_voice_command(&command, client_id).await.ok);
@@ -2300,6 +2366,7 @@ mod tests {
             action,
             capability_id: None,
             app_id: None,
+            item_id: None,
         }
     }
 
@@ -2470,6 +2537,7 @@ mod tests {
                 action: ActionKind::OrderPriority,
                 capability_id: None,
                 app_id: None,
+                item_id: None,
             })
             .await;
 
@@ -2523,6 +2591,7 @@ mod tests {
                 action: ActionKind::OrderPriority,
                 capability_id: None,
                 app_id: None,
+                item_id: None,
             })
             .await;
 
@@ -2566,6 +2635,7 @@ mod tests {
                 action,
                 capability_id: capability.map(str::to_owned),
                 app_id: None,
+                item_id: None,
             })
             .unwrap()
         };

@@ -13,6 +13,7 @@ QtObject {
         "spotify_play_pause",
         "spotify_next",
         "spotify_previous",
+        "basecamp_open",
         "voice_start",
         "voice_stop",
         "voice_cancel",
@@ -30,7 +31,7 @@ QtObject {
         lastError = ""
     }
 
-    function build(action, agentId, capabilityId, pinnedSequence, appId) {
+    function build(action, agentId, capabilityId, pinnedSequence, appId, itemId) {
         lastError = ""
 
         if (allowedActions.indexOf(action) === -1) {
@@ -41,6 +42,7 @@ QtObject {
         var normalizedAgentId = String(agentId || "")
         var normalizedCapabilityId = String(capabilityId || "")
         var normalizedAppId = String(appId || "")
+        var normalizedItemId = String(itemId || "")
         var normalizedSequence = Number(pinnedSequence)
 
         if (!isFinite(normalizedSequence) || normalizedSequence < 0) {
@@ -53,6 +55,7 @@ QtObject {
             || action === "spotify_play_pause"
             || action === "spotify_next"
             || action === "spotify_previous"
+            || action === "basecamp_open"
             || action === "voice_start"
             || action === "voice_stop"
             || action === "voice_cancel"
@@ -95,6 +98,17 @@ QtObject {
             return null
         }
 
+        if (action === "basecamp_open"
+                && !/^[0-9]{1,20}$/.test(normalizedItemId)) {
+            lastError = "Basecamp open requires a published item_id"
+            return null
+        }
+
+        if (action !== "basecamp_open" && normalizedItemId !== "") {
+            lastError = "Only basecamp_open accepts an item_id"
+            return null
+        }
+
         requestCounter += 1
         var command = {
             "schema_version": 1,
@@ -112,6 +126,9 @@ QtObject {
 
         if (normalizedAppId !== "")
             command.app_id = normalizedAppId
+
+        if (normalizedItemId !== "")
+            command.item_id = normalizedItemId
 
         return command
     }
