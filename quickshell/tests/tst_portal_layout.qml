@@ -595,6 +595,10 @@ TestCase {
         wait(0)
         compare(actions.x, x)
         verify(findChild(portal, "dashboardTitle").truncated === false)
+        // A real host name and the agent title fit without eliding.
+        portal.hostName = "desktop"
+        wait(0)
+        verify(findChild(portal, "dashboardTitle").truncated === false)
         portal.hostName = "LOCAL"
     }
 

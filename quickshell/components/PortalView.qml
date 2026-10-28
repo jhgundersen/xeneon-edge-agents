@@ -26,7 +26,8 @@ Item {
             ? String(preferences.dashboard)
             : dashboards[0]
     readonly property bool agentsDashboard: currentDashboard === "agents"
-    readonly property real identityTextWidth: 360
+    // Fits "DESKTOP // AGENT COMMAND" (388 px); longer names elide.
+    readonly property real identityTextWidth: 400
     // Grouped ordering renders one lane per workspace. Lanes keep the grid's
     // two-row card size and pack whole lanes onto pages of the same width.
     readonly property bool laneLayout:
@@ -243,8 +244,8 @@ Item {
             return store.slack.notifications.length + " FOR YOU"
         }
         var order = pendingAgentOrderRequest !== ""
-            ? "SYNCING  ·  "
-            : agentOrderAvailable ? agentOrderMode.toUpperCase() + "  ·  " : ""
+            ? "SYNCING · "
+            : agentOrderAvailable ? agentOrderMode.toUpperCase() + " · " : ""
         var working = 0
         var waiting = 0
         for (var index = 0; index < store.agents.length; index += 1) {

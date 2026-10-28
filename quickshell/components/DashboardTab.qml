@@ -43,7 +43,7 @@ Rectangle {
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            width: Math.min(implicitWidth, root.width - 16)
+            width: Math.min(implicitWidth, root.width - 10)
             text: root.label
             textFormat: Text.PlainText
             color: root.selected ? root.theme.textPrimary : root.theme.textMuted
@@ -58,7 +58,7 @@ Rectangle {
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            width: Math.min(implicitWidth, root.width - 16)
+            width: Math.min(implicitWidth, root.width - 10)
             text: root.detail
             textFormat: Text.PlainText
             color: ThemePalette.ensureContrast(
