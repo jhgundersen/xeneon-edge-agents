@@ -42,6 +42,9 @@ pub fn validate_command(command: &PortalCommand) -> Result<(), CommandError> {
     match command.action {
         ActionKind::RestoreFocus
         | ActionKind::DesktopApp
+        | ActionKind::SpotifyPlayPause
+        | ActionKind::SpotifyNext
+        | ActionKind::SpotifyPrevious
         | ActionKind::VoiceStart
         | ActionKind::VoiceStop
         | ActionKind::VoiceCancel

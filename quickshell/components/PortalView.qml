@@ -17,6 +17,15 @@ Item {
     property string hostName: "LOCAL"
 
     readonly property int pageSize: 14
+    // Dashboards the daemon enabled, in order. The selection is a display
+    // preference and falls back to the first enabled dashboard.
+    readonly property var dashboards: store.dashboards !== undefined
+        && store.dashboards.length > 0 ? store.dashboards : ["agents"]
+    readonly property string currentDashboard:
+        dashboards.indexOf(String(preferences.dashboard || "")) !== -1
+            ? String(preferences.dashboard)
+            : dashboards[0]
+    readonly property bool agentsDashboard: currentDashboard === "agents"
     // Grouped ordering renders one lane per workspace. Lanes keep the grid's
     // two-row card size and pack whole lanes onto pages of the same width.
     readonly property bool laneLayout:
@@ -183,6 +192,27 @@ Item {
         return pageIndex >= 0 && pageIndex < lanePages.length
             ? lanePages[pageIndex]
             : { "columns": 1, "rows": 1, "lanes": [] }
+    }
+
+    function dashboardTitle(dashboard) {
+        return dashboard === "spotify" ? "NOW PLAYING" : "AGENT COMMAND"
+    }
+
+    function selectNextDashboard() {
+        if (dashboards.length < 2)
+            return false
+        var next = dashboards[
+            (dashboards.indexOf(currentDashboard) + 1) % dashboards.length
+        ]
+        preferences.dashboard = next
+        if (typeof preferences.sync === "function")
+            preferences.sync()
+        notePassiveInteraction()
+        return true
+    }
+
+    function desktopAppConfigured(appId) {
+        return store.desktopApps.some(function(app) { return app.id === appId })
     }
 
     function attentionSummary() {
@@ -446,8 +476,9 @@ Item {
                 spacing: 2
 
                 Text {
+                    objectName: "dashboardTitle"
                     text: String(root.hostName || "LOCAL").toUpperCase()
-                        + " // AGENT COMMAND"
+                        + " // " + root.dashboardTitle(root.currentDashboard)
                     textFormat: Text.PlainText
                     color: root.theme.textPrimary
                     font {
@@ -482,12 +513,61 @@ Item {
             spacing: 12
 
             Rectangle {
+                id: dashboardToggle
+                objectName: "dashboardToggle"
+
+                width: 160
+                height: 48
+                radius: 12
+                visible: root.dashboards.length > 1
+                color: dashboardTap.pressed
+                    ? root.theme.surfacePressed
+                    : root.theme.surfaceRaised
+                border.width: 1
+                border.color: root.theme.accent
+                enabled: root.controlCenterInteractive
+
+                function activate() {
+                    if (!enabled)
+                        return false
+                    return root.selectNextDashboard()
+                }
+
+                Accessible.role: Accessible.Button
+                Accessible.ignored: !visible
+                Accessible.name: "Dashboard " + root.currentDashboard
+                Accessible.description: "Switch to the next dashboard"
+                Accessible.onPressAction: activate()
+
+                Text {
+                    objectName: "dashboardLabel"
+                    anchors.centerIn: parent
+                    text: "VIEW // " + root.currentDashboard.toUpperCase()
+                    textFormat: Text.PlainText
+                    color: root.theme.textPrimary
+                    font {
+                        family: "monospace"
+                        pixelSize: 11
+                        weight: Font.DemiBold
+                        letterSpacing: 0.5
+                    }
+                }
+
+                TapHandler {
+                    id: dashboardTap
+                    gesturePolicy: TapHandler.ReleaseWithinBounds
+                    onTapped: dashboardToggle.activate()
+                }
+            }
+
+            Rectangle {
                 id: agentBackendToggle
                 objectName: "agentBackendToggle"
 
                 width: 184
                 height: 48
                 radius: 12
+                visible: root.agentsDashboard
                 color: backendTap.pressed
                     ? root.theme.surfacePressed
                     : root.theme.surfaceRaised
@@ -557,6 +637,7 @@ Item {
                 width: 184
                 height: 48
                 radius: 12
+                visible: root.agentsDashboard
                 color: orderTap.pressed
                     ? root.theme.surfacePressed
                     : root.theme.surfaceRaised
@@ -636,7 +717,7 @@ Item {
 
                     objectName: "desktopAppButton_" + modelData.id
                     // Four shortcuts must still clear the page dots.
-                    width: root.store.desktopApps.length > 2 ? 112 : 132
+                    width: root.store.desktopApps.length > 2 ? 104 : 132
                     height: 48
                     label: String(modelData.label).toUpperCase()
                     accent: root.theme[modelData.accent] || root.theme.accent
@@ -662,7 +743,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 12
 
-            visible: root.pageCount > 1
+            visible: root.agentsDashboard && root.pageCount > 1
 
             Repeater {
                 model: root.pageCount
@@ -892,6 +973,7 @@ Item {
             bottomMargin: 10
         }
         orientation: ListView.Horizontal
+        visible: root.agentsDashboard
         model: root.pageCount
         currentIndex: root.currentPage
         snapMode: ListView.SnapOneItem
@@ -1091,9 +1173,10 @@ Item {
             bottom: pages.bottom
             margins: 34
         }
-        visible: root.surfaceState === "loading"
-            || root.surfaceState === "disconnected"
-            || root.surfaceState === "empty"
+        visible: root.agentsDashboard
+            && (root.surfaceState === "loading"
+                || root.surfaceState === "disconnected"
+                || root.surfaceState === "empty")
         z: 20
         opacity: ambientView.controlCenterProgress
 
@@ -1162,6 +1245,7 @@ Item {
             bottomMargin: 16
         }
         height: 106
+        visible: root.agentsDashboard
         usage: root.store.usage
         theme: root.theme
         agents: root.store.agents
@@ -1324,6 +1408,15 @@ Item {
                 }
                 return
             }
+            if (String(result.action).indexOf("spotify_") === 0) {
+                if (!result.ok)
+                    root.showToast(
+                        "SPOTIFY // " + String(result.code).toUpperCase(),
+                        result.message || result.request_id,
+                        false
+                    )
+                return
+            }
             if (result.action === "desktop_app") {
                 var desktopPending = Object.assign(
                     {},
@@ -1387,6 +1480,38 @@ Item {
                 )
             }
         }
+    }
+
+    SpotifyView {
+        objectName: "spotifyDashboard"
+        anchors {
+            left: parent.left
+            right: parent.right
+            top: header.bottom
+            bottom: parent.bottom
+            leftMargin: 24
+            rightMargin: 24
+            topMargin: 8
+            bottomMargin: 16
+        }
+        visible: root.currentDashboard === "spotify"
+        spotify: root.store.spotify
+        theme: root.theme
+        reducedMotion: root.effectiveReducedMotion
+        canOpenSpotify: root.desktopAppConfigured("spotify")
+        enabled: root.controlCenterInteractive
+        onInteracted: root.activity.noteUserActivity()
+        onPlayPauseRequested: root.bridge.spotifyPlayPause()
+        onNextRequested: root.bridge.spotifyNext()
+        onPreviousRequested: root.bridge.spotifyPrevious()
+        onOpenRequested: root.requestDesktop("spotify")
+    }
+
+    // Other dashboards stay on screen instead of handing over to ambient.
+    Binding {
+        target: root.activity
+        property: "ambientAllowed"
+        value: root.agentsDashboard
     }
 
     AmbientView {

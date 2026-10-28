@@ -10,6 +10,9 @@ QtObject {
         "interrupt",
         "restore_focus",
         "desktop_app",
+        "spotify_play_pause",
+        "spotify_next",
+        "spotify_previous",
         "voice_start",
         "voice_stop",
         "voice_cancel",
@@ -47,6 +50,9 @@ QtObject {
 
         var systemAction = action === "restore_focus"
             || action === "desktop_app"
+            || action === "spotify_play_pause"
+            || action === "spotify_next"
+            || action === "spotify_previous"
             || action === "voice_start"
             || action === "voice_stop"
             || action === "voice_cancel"

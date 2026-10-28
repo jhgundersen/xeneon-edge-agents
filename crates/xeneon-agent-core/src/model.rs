@@ -74,6 +74,9 @@ pub enum ActionKind {
     Interrupt,
     RestoreFocus,
     DesktopApp,
+    SpotifyPlayPause,
+    SpotifyNext,
+    SpotifyPrevious,
     VoiceStart,
     VoiceStop,
     VoiceCancel,
@@ -81,6 +84,43 @@ pub enum ActionKind {
     OrderPriority,
     BackendHerdr,
     BackendT3code,
+}
+
+/// A full-screen view the portal can switch between. The daemon publishes
+/// the enabled list in order; the agent command center is `agents`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DashboardKind {
+    Agents,
+    Spotify,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlaybackStatus {
+    Playing,
+    Paused,
+    #[default]
+    Stopped,
+}
+
+/// Now-playing state read from Spotify's MPRIS interface. `position_ms` is
+/// the position when the daemon sampled it; the portal advances it locally
+/// while playing so the daemon need not publish every second.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SpotifySnapshot {
+    pub available: bool,
+    pub status: PlaybackStatus,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub art_url: Option<String>,
+    pub length_ms: u64,
+    pub position_ms: u64,
+    pub can_control: bool,
+    pub can_go_next: bool,
+    pub can_go_previous: bool,
 }
 
 /// Which agent manager the daemon observes and routes agent actions to.
@@ -332,6 +372,12 @@ pub struct PortalSnapshot {
     /// Header shortcuts from the daemon's `desktop.apps` configuration.
     #[serde(default)]
     pub desktop_apps: Vec<DesktopAppView>,
+    /// Enabled dashboards in display order; always at least one.
+    #[serde(default)]
+    pub dashboards: Vec<DashboardKind>,
+    /// Populated only while the Spotify dashboard is enabled.
+    #[serde(default)]
+    pub spotify: SpotifySnapshot,
     pub voice: VoiceSnapshot,
     pub usage: AiUsageSnapshot,
     pub micro: MicroSnapshot,
@@ -358,6 +404,8 @@ impl PortalSnapshot {
             agent_order: AgentOrderSnapshot::default(),
             backend: AgentBackendSnapshot::default(),
             desktop_apps: Vec::new(),
+            dashboards: vec![DashboardKind::Agents],
+            spotify: SpotifySnapshot::default(),
             voice: VoiceSnapshot::default(),
             usage: AiUsageSnapshot::default(),
             micro: MicroSnapshot::default(),

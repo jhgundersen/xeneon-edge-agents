@@ -32,6 +32,9 @@ QtObject {
     })
     // Header shortcuts configured in the daemon's desktop.apps (0-4).
     property var desktopApps: []
+    // Enabled dashboards in order; the daemon always lists at least one.
+    property var dashboards: ["agents"]
+    property var spotify: ({"available": false})
     property var health: ({})
     property var voice: ({
         "available": false,
@@ -112,6 +115,8 @@ QtObject {
         agentOrder = {"available": false, "mode": "grouped"}
         backend = {"mode": "herdr", "switchable": false}
         desktopApps = []
+        dashboards = ["agents"]
+        spotify = {"available": false}
         health = {}
         voice = {
             "available": false,
@@ -305,6 +310,45 @@ QtObject {
         return {
             "mode": mode,
             "switchable": source.switchable === true
+        }
+    }
+
+    function normalizeDashboards(value) {
+        var known = ["agents", "spotify"]
+        var result = []
+        if (Array.isArray(value)) {
+            for (var index = 0; index < value.length; index += 1) {
+                var id = safeString(value[index], "", 16)
+                if (known.indexOf(id) !== -1 && result.indexOf(id) === -1)
+                    result.push(id)
+            }
+        }
+        return result.length > 0 ? result : ["agents"]
+    }
+
+    function normalizeSpotify(value) {
+        if (value === null || typeof value !== "object" || value.available !== true)
+            return {"available": false}
+        var status = safeString(value.status, "stopped", 16)
+        if (["playing", "paused", "stopped"].indexOf(status) === -1)
+            status = "stopped"
+        var artUrl = safeString(value.art_url, "", 256)
+        var length = Math.max(0, finiteNumber(value.length_ms, 0))
+        return {
+            "available": true,
+            "status": status,
+            "title": safeString(value.title, "", 160),
+            "artist": safeString(value.artist, "", 160),
+            "album": safeString(value.album, "", 160),
+            "art_url": artUrl.indexOf("https://i.scdn.co/image/") === 0 ? artUrl : "",
+            "length_ms": length,
+            "position_ms": Math.min(
+                length,
+                Math.max(0, finiteNumber(value.position_ms, 0))
+            ),
+            "can_control": value.can_control === true,
+            "can_go_next": value.can_go_next === true,
+            "can_go_previous": value.can_go_previous === true
         }
     }
 
@@ -761,6 +805,8 @@ QtObject {
         var nextMicro = normalizeMicro(snapshot.micro)
         backend = nextBackend
         desktopApps = normalizeDesktopApps(snapshot.desktop_apps)
+        dashboards = normalizeDashboards(snapshot.dashboards)
+        spotify = normalizeSpotify(snapshot.spotify)
         var nextSignature = semanticSignature(
             nextConnection,
             nextAgents,

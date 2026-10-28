@@ -4,6 +4,8 @@ QtObject {
     id: root
 
     property bool automatic: true
+    // Only the agent dashboard hands over to the ambient constellation.
+    property bool ambientAllowed: true
     property int inactivityMs: 60000
     property int eventWakeMs: 15000
     property double lastUserActivityMs: Date.now()
@@ -42,7 +44,8 @@ QtObject {
 
     function evaluate(nowMs) {
         var now = nowMs === undefined ? Date.now() : nowMs
-        ambientMode = now - lastUserActivityMs >= inactivityMs
+        ambientMode = ambientAllowed
+                && now - lastUserActivityMs >= inactivityMs
                 && now >= eventWakeUntilMs
         return ambientMode
     }

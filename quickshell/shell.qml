@@ -125,6 +125,8 @@ ShellRoot {
             category: "display"
             property bool reduceMotion: false
             property bool dimmed: false
+            // Last dashboard shown; ignored if it is no longer enabled.
+            property string dashboard: "agents"
             property string readyColorRole: "muted"
             property string successColorRole: "green"
             property string workingColorRole: "blue"

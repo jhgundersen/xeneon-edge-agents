@@ -23,6 +23,9 @@
         "interrupt",
         "restore_focus",
         "desktop_app",
+        "spotify_play_pause",
+        "spotify_next",
+        "spotify_previous",
         "voice_start",
         "voice_stop",
         "voice_cancel",
@@ -41,6 +44,24 @@
       "properties": {
         "mode": { "$ref": "#/$defs/agentBackend" },
         "switchable": { "type": "boolean" }
+      }
+    },
+    "dashboard": { "enum": ["agents", "spotify"] },
+    "spotify": {
+      "type": "object",
+      "required": ["available"],
+      "properties": {
+        "available": { "type": "boolean" },
+        "status": { "enum": ["playing", "paused", "stopped"] },
+        "title": { "type": "string", "maxLength": 160 },
+        "artist": { "type": "string", "maxLength": 160 },
+        "album": { "type": "string", "maxLength": 160 },
+        "art_url": { "type": "string", "pattern": "^https://i\\.scdn\\.co/image/" },
+        "length_ms": { "type": "integer", "minimum": 0 },
+        "position_ms": { "type": "integer", "minimum": 0 },
+        "can_control": { "type": "boolean" },
+        "can_go_next": { "type": "boolean" },
+        "can_go_previous": { "type": "boolean" }
       }
     },
     "desktopApp": {
@@ -289,6 +310,14 @@
         },
         "agent_order": { "$ref": "#/$defs/agentOrder" },
         "backend": { "$ref": "#/$defs/backend" },
+        "dashboards": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/dashboard" }
+        },
+        "spotify": { "$ref": "#/$defs/spotify" },
         "desktop_apps": {
           "type": "array",
           "maxItems": 4,

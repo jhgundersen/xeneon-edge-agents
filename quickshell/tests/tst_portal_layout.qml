@@ -20,6 +20,8 @@ TestCase {
         property var agentOrder: ({"available": true, "mode": "grouped"})
         property var backend: ({"mode": "herdr", "switchable": true})
         property var desktopApps: []
+        property var dashboards: ["agents"]
+        property var spotify: ({"available": false})
         property var sessions: []
         property var usage: ({"providers": []})
         property var micro: ({"connected": false, "charging": false})
@@ -60,6 +62,10 @@ TestCase {
             appRequests = next
             return appId + "-" + next[appId]
         }
+        property var spotifyCommands: []
+        function spotifyPlayPause() { spotifyCommands = spotifyCommands.concat(["play_pause"]); return "sp" }
+        function spotifyNext() { spotifyCommands = spotifyCommands.concat(["next"]); return "sn" }
+        function spotifyPrevious() { spotifyCommands = spotifyCommands.concat(["previous"]); return "sv" }
         function startVoice() { return "voice-start" }
         function stopVoice() { return "voice-stop" }
         function cancelVoice() { return "voice-cancel" }
@@ -79,6 +85,7 @@ TestCase {
         id: mockActivity
 
         property bool ambientMode: false
+        property bool ambientAllowed: true
         property int noteCount: 0
         function noteUserActivity() {
             noteCount += 1
@@ -91,6 +98,7 @@ TestCase {
 
         property bool reduceMotion: false
         property bool dimmed: false
+        property string dashboard: "agents"
         property string readyColorRole: "muted"
         property string successColorRole: "green"
         property string workingColorRole: "blue"
@@ -154,6 +162,10 @@ TestCase {
         mockBridge.orderRequests = 0
         mockBridge.lastOrder = ""
         mockBridge.appRequests = ({})
+        mockBridge.spotifyCommands = []
+        mockStore.dashboards = ["agents"]
+        mockStore.spotify = {"available": false}
+        mockPreferences.dashboard = "agents"
         mockStore.desktopApps = [
             {"id": "spotify", "label": "Spotify", "accent": "green"},
             {"id": "discord", "label": "Discord", "accent": "blue"}
@@ -252,6 +264,66 @@ TestCase {
         verify(track !== null && glider !== null)
         verify(track.y + track.height <= workingCard.height)
         compare(glider.x, (track.width - glider.width) / 2)
+    }
+
+    function test_viewToggleCyclesEnabledDashboardsAndHidesAgentControls() {
+        var toggle = findChild(portal, "dashboardToggle")
+        var title = findChild(portal, "dashboardTitle")
+        verify(!toggle.visible)
+        verify(portal.agentsDashboard)
+
+        mockStore.dashboards = ["agents", "spotify"]
+        wait(0)
+        verify(toggle.activate())
+        compare(portal.currentDashboard, "spotify")
+        compare(mockPreferences.dashboard, "spotify")
+        compare(findChild(portal, "dashboardLabel").text, "VIEW // SPOTIFY")
+        verify(title.text.indexOf("// NOW PLAYING") > 0)
+        verify(!mockActivity.ambientAllowed)
+        verify(!findChild(portal, "agentOrderToggle").visible)
+        verify(!findChild(portal, "agentBackendToggle").visible)
+
+        verify(toggle.activate())
+        compare(portal.currentDashboard, "agents")
+        verify(mockActivity.ambientAllowed)
+
+        // A remembered dashboard that is no longer enabled falls back.
+        mockPreferences.dashboard = "spotify"
+        mockStore.dashboards = ["agents"]
+        wait(0)
+        compare(portal.currentDashboard, "agents")
+    }
+
+    function test_spotifyDashboardShowsTrackAndSendsTypedControls() {
+        mockStore.dashboards = ["agents", "spotify"]
+        mockPreferences.dashboard = "spotify"
+        mockStore.spotify = {
+            "available": true,
+            "status": "paused",
+            "title": "Track",
+            "artist": "Artist",
+            "album": "Album",
+            "art_url": "",
+            "length_ms": 200000,
+            "position_ms": 65000,
+            "can_control": true,
+            "can_go_next": true,
+            "can_go_previous": false
+        }
+        wait(0)
+        compare(findChild(portal, "spotifyTitle").text, "Track")
+        compare(findChild(portal, "spotifyStatus").text, "PAUSED")
+        compare(findChild(portal, "spotifyElapsed").text, "1:05")
+        var playPause = findChild(portal, "spotifyPlayPause")
+        compare(playPause.label, "PLAY")
+        verify(playPause.activate())
+        verify(findChild(portal, "spotifyNext").activate())
+        verify(!findChild(portal, "spotifyPrevious").activate())
+        compare(mockBridge.spotifyCommands, ["play_pause", "next"])
+
+        mockStore.spotify = {"available": false}
+        wait(0)
+        verify(!findChild(portal, "spotifyTitle").parent.visible)
     }
 
     function test_priorityOrderKeepsTheFlatGrid() {
@@ -494,6 +566,16 @@ TestCase {
         tryCompare(portal, "pageCount", 2)
         var status = findChild(portal, "headerStatus")
         tryVerify(function() { return dots.x + dots.width < status.x })
+        // The dashboard toggle takes one more slot and must still fit.
+        mockStore.dashboards = ["agents", "spotify"]
+        var backend = findChild(portal, "agentBackendToggle")
+        var toggle = findChild(portal, "dashboardToggle")
+        wait(0)
+        // Headless windows report the portal invisible, so the Row may not
+        // lay out the newly shown toggle; count its slot either way.
+        var toggleSpace = backend.x > 0 ? 0 : toggle.width + actions.spacing
+        verify(actions.x + actions.width + toggleSpace + 24 + dots.width
+            < status.x)
         verify(last.activate())
         compare(mockBridge.appRequests.notes, 1)
     }

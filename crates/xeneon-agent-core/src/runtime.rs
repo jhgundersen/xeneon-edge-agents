@@ -26,17 +26,20 @@ use crate::{
     micro::MicroCollector,
     model::{
         ActionKind, ActionResult, AgentActions, AgentBackend, AgentBackendSnapshot, AgentOrderMode,
-        AgentOrderSnapshot, AgentStatus, ConnectionState, DesktopAppView, PortalCommand,
-        PortalSnapshot, SCHEMA_VERSION, ServerMessage, SessionState, SessionView, VoiceState,
-        sort_agents,
+        AgentOrderSnapshot, AgentStatus, ConnectionState, DashboardKind, DesktopAppView,
+        PortalCommand, PortalSnapshot, SCHEMA_VERSION, ServerMessage, SessionState, SessionView,
+        VoiceState, sort_agents,
     },
     protocol::{command_capability_matches, validate_command},
+    spotify::{SpotifyClient, spotify_changed},
     t3code::{self, T3codeClient, T3codeTarget},
     usage::UsageCollector,
     voice::{VoiceActionError, VoiceController},
 };
 
 const INVALIDATION_COALESCE: Duration = Duration::from_millis(200);
+const SPOTIFY_REFRESH: Duration = Duration::from_millis(1_000);
+const SPOTIFY_POSITION_TOLERANCE_MS: u64 = 1_500;
 const BACKEND_STATE_FILE_NAME: &str = "xeneon-edge-agents/agent-backend.toml";
 /// Invalidation key used when the portal switches agent managers.
 const BACKEND_SWITCH_INVALIDATION: &str = "\0backend";
@@ -165,6 +168,7 @@ pub struct DaemonRuntime {
     backend_state_path: Option<PathBuf>,
     state: Arc<RwLock<RuntimeState>>,
     desktop: Arc<DesktopController>,
+    spotify: SpotifyClient,
     voice: Arc<Mutex<VoiceController>>,
     order_operation: Arc<Mutex<()>>,
     updates: watch::Sender<String>,
@@ -187,6 +191,7 @@ impl DaemonRuntime {
         config.validate()?;
         let epoch = Uuid::new_v4().to_string();
         let mut snapshot = PortalSnapshot::empty(epoch);
+        snapshot.dashboards = config.dashboards.clone();
         snapshot.desktop_apps = config
             .desktop
             .apps
@@ -235,6 +240,7 @@ impl DaemonRuntime {
                     voice_client_owner: None,
                 })),
                 desktop: Arc::new(desktop),
+                spotify: SpotifyClient::default(),
                 voice: Arc::new(Mutex::new(voice)),
                 order_operation: Arc::new(Mutex::new(())),
                 updates,
@@ -294,6 +300,10 @@ impl DaemonRuntime {
         let mut health_tick = interval(self.config.health_refresh_interval());
         let mut voice_tick = interval(self.config.voice_refresh_interval());
         let mut micro_tick = interval(self.config.micro_refresh_interval());
+        let spotify_enabled = self.config.dashboards.contains(&DashboardKind::Spotify);
+        let mut spotify_tick = interval(SPOTIFY_REFRESH);
+        let mut spotify_published_at = Instant::now();
+        spotify_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
         health_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
         voice_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
         micro_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -312,6 +322,23 @@ impl DaemonRuntime {
                 }
                 _ = voice_tick.tick() => {
                     self.refresh_voice().await;
+                }
+                _ = spotify_tick.tick(), if spotify_enabled => {
+                    let sample = self.spotify.sample().await;
+                    let elapsed_ms = spotify_published_at.elapsed().as_millis() as u64;
+                    let mut state = self.state.write().await;
+                    if spotify_changed(
+                        &state.snapshot.spotify,
+                        &sample,
+                        elapsed_ms,
+                        SPOTIFY_POSITION_TOLERANCE_MS,
+                    ) {
+                        state.snapshot.spotify = sample;
+                        state.snapshot.generated_at_ms = now_ms();
+                        drop(state);
+                        spotify_published_at = Instant::now();
+                        self.publish().await;
+                    }
                 }
                 _ = micro_tick.tick() => {
                     let sample = micro.sample().await;
@@ -828,6 +855,39 @@ impl DaemonRuntime {
             };
         }
 
+        if matches!(
+            command.action,
+            ActionKind::SpotifyPlayPause | ActionKind::SpotifyNext | ActionKind::SpotifyPrevious
+        ) {
+            if !self.config.dashboards.contains(&DashboardKind::Spotify) {
+                return action_error(
+                    &command.request_id,
+                    "target_unavailable",
+                    "the Spotify dashboard is not enabled",
+                );
+            }
+            return match self.spotify.control(command.action).await {
+                Ok(()) => {
+                    // Publish the new state now rather than on the next tick.
+                    let sample = self.spotify.sample().await;
+                    let mut state = self.state.write().await;
+                    state.snapshot.spotify = sample;
+                    state.snapshot.generated_at_ms = now_ms();
+                    drop(state);
+                    self.publish().await;
+                    action_ok(&command.request_id, "spotify_command_sent")
+                }
+                Err(error) => {
+                    tracing::warn!(%error, action = ?command.action, "Spotify control failed");
+                    action_error(
+                        &command.request_id,
+                        "target_unavailable",
+                        "Spotify is not running or did not respond",
+                    )
+                }
+            };
+        }
+
         if command.action == ActionKind::DesktopApp {
             // The portal only names a configured shortcut; an unknown id is
             // refused before anything is focused or launched.
@@ -925,6 +985,9 @@ impl DaemonRuntime {
             | ActionKind::Interrupt
             | ActionKind::RestoreFocus
             | ActionKind::DesktopApp
+            | ActionKind::SpotifyPlayPause
+            | ActionKind::SpotifyNext
+            | ActionKind::SpotifyPrevious
             | ActionKind::VoiceStart
             | ActionKind::VoiceStop
             | ActionKind::VoiceCancel

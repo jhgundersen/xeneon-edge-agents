@@ -152,6 +152,10 @@ The only actions are:
   by this daemon instance.
 - `voice_cancel`: takes no agent or capability and discards only a recording
   owned by this daemon instance.
+- `spotify_play_pause`, `spotify_next`, and `spotify_previous`: take no
+  agent, capability, or `app_id` and make the matching fixed MPRIS call on
+  the Spotify desktop client. They are refused unless `spotify` is listed in
+  the snapshot's `dashboards`.
 - `desktop_app`: takes no agent or capability and requires `app_id`, one of
   the ids in the snapshot's `desktop_apps` (0-4 entries from the daemon's
   `desktop-apps.toml` or `[[desktop.apps]]` configuration). The daemon focuses the single exact

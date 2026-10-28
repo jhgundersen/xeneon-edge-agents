@@ -120,6 +120,11 @@ reused cache-read context is excluded) in the
 read-only SQLite message ledger. The AI footer shows both reported usage
 windows, resets, plan/freshness state, and bounded today/hour token activity
 when available.
+More than one dashboard can be enabled per machine in
+`~/.config/xeneon-edge-agents/dashboards.toml` (see
+`config/xeneon-edge-agents/dashboards.toml.example`); the header's VIEW toggle
+cycles through them. Besides the agent command center there is a Spotify
+now-playing dashboard with play/pause, next, and previous.
 Header controls focus or launch 0-4 desktop apps configured per machine in
 `~/.config/xeneon-edge-agents/desktop-apps.toml` (Spotify and Discord when the
 file is absent); see `config/xeneon-edge-agents/desktop-apps.toml.example`.

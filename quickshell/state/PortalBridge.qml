@@ -156,6 +156,18 @@ QtObject {
         return sendBuilt("desktop_app", "", "", store.sequence, appId)
     }
 
+    function spotifyPlayPause() {
+        return sendBuilt("spotify_play_pause", "", "", store.sequence)
+    }
+
+    function spotifyNext() {
+        return sendBuilt("spotify_next", "", "", store.sequence)
+    }
+
+    function spotifyPrevious() {
+        return sendBuilt("spotify_previous", "", "", store.sequence)
+    }
+
     function startVoice() {
         return sendBuilt("voice_start", "", "", store.sequence)
     }

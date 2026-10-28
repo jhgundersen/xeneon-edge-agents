@@ -9,7 +9,7 @@ use std::{
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::model::AgentBackend;
+use crate::model::{AgentBackend, DashboardKind};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -26,6 +26,9 @@ pub struct Config {
     pub micro_refresh_ms: u64,
     pub screen: ScreenConfig,
     pub desktop: DesktopConfig,
+    /// Enabled dashboards in switcher order. Usually set per machine in
+    /// `dashboards.toml` beside this file.
+    pub dashboards: Vec<DashboardKind>,
     pub t3code: T3codeConfig,
 }
 
@@ -71,6 +74,15 @@ pub const MAX_DESKTOP_APPS: usize = 4;
 /// `config.toml` and refuses to overwrite a modified copy, so the list lives
 /// in a file it never writes.
 pub const DESKTOP_APPS_FILE_NAME: &str = "desktop-apps.toml";
+/// Per-machine list of enabled dashboards, also never written by the installer.
+pub const DASHBOARDS_FILE_NAME: &str = "dashboards.toml";
+pub const MAX_DASHBOARDS: usize = 6;
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DashboardsFile {
+    dashboards: Vec<DashboardKind>,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -184,6 +196,7 @@ impl Default for Config {
             micro_refresh_ms: 5_000,
             screen: ScreenConfig::default(),
             desktop: DesktopConfig::default(),
+            dashboards: vec![DashboardKind::Agents],
             t3code: T3codeConfig::default(),
         }
     }
@@ -229,6 +242,18 @@ impl Config {
             let file: DesktopAppsFile = toml::from_str(&contents)
                 .with_context(|| format!("parsing {}", apps_path.display()))?;
             config.desktop.apps = file.apps;
+        }
+        if let Some(dashboards_path) = path
+            .as_deref()
+            .and_then(Path::parent)
+            .map(|directory| directory.join(DASHBOARDS_FILE_NAME))
+            .filter(|dashboards_path| dashboards_path.exists())
+        {
+            let contents = fs::read_to_string(&dashboards_path)
+                .with_context(|| format!("reading {}", dashboards_path.display()))?;
+            let file: DashboardsFile = toml::from_str(&contents)
+                .with_context(|| format!("parsing {}", dashboards_path.display()))?;
+            config.dashboards = file.dashboards;
         }
         config.apply_runtime_output(runtime_output)?;
         Ok(config)
@@ -303,6 +328,14 @@ impl Config {
         }
         if self.desktop.herdr_class.trim().is_empty() {
             anyhow::bail!("desktop.herdr_class must not be empty");
+        }
+        if self.dashboards.is_empty() || self.dashboards.len() > MAX_DASHBOARDS {
+            anyhow::bail!("dashboards must list 1-{MAX_DASHBOARDS} dashboards");
+        }
+        for (index, dashboard) in self.dashboards.iter().enumerate() {
+            if self.dashboards[..index].contains(dashboard) {
+                anyhow::bail!("dashboards lists {dashboard:?} more than once");
+            }
         }
         if self.desktop.apps.len() > MAX_DESKTOP_APPS {
             anyhow::bail!("desktop.apps allows at most {MAX_DESKTOP_APPS} shortcuts");
@@ -482,6 +515,47 @@ mod tests {
         config.validate().unwrap();
         let ids: Vec<_> = config.desktop.apps.iter().map(|app| &app.id).collect();
         assert_eq!(ids, ["spotify", "discord"]);
+    }
+
+    #[test]
+    fn dashboards_file_selects_enabled_dashboards_in_order() {
+        let temp = tempfile::tempdir().unwrap();
+        let config_path = temp.path().join("config.toml");
+        fs::write(&config_path, "").unwrap();
+        let loaded = Config::load_with_runtime_output(Some(&config_path), None).unwrap();
+        assert_eq!(loaded.dashboards, [DashboardKind::Agents]);
+
+        let dashboards_path = temp.path().join(DASHBOARDS_FILE_NAME);
+        fs::write(&dashboards_path, "dashboards = [\"spotify\", \"agents\"]\n").unwrap();
+        let loaded = Config::load_with_runtime_output(Some(&config_path), None).unwrap();
+        assert_eq!(
+            loaded.dashboards,
+            [DashboardKind::Spotify, DashboardKind::Agents]
+        );
+        loaded.validate().unwrap();
+
+        for invalid in [
+            "dashboards = []\n",
+            "dashboards = [\"agents\", \"agents\"]\n",
+        ] {
+            fs::write(&dashboards_path, invalid).unwrap();
+            let loaded = Config::load_with_runtime_output(Some(&config_path), None).unwrap();
+            assert!(loaded.validate().is_err(), "accepted: {invalid}");
+        }
+        fs::write(&dashboards_path, "dashboards = [\"myspace\"]\n").unwrap();
+        assert!(Config::load_with_runtime_output(Some(&config_path), None).is_err());
+    }
+
+    #[test]
+    fn shipped_dashboards_example_parses() {
+        let file: DashboardsFile = toml::from_str(include_str!(
+            "../../../config/xeneon-edge-agents/dashboards.toml.example"
+        ))
+        .unwrap();
+        assert_eq!(
+            file.dashboards,
+            [DashboardKind::Agents, DashboardKind::Spotify]
+        );
     }
 
     #[test]
